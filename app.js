@@ -6,8 +6,8 @@ let isPlaying = false;
 
 // Structure des deux platines
 const decks = [
-  { source: null, gainNode: audioCtx.createGain(), timeout: null, startTime: 0, duration: 0, animFrame: null },
-  { source: null, gainNode: audioCtx.createGain(), timeout: null, startTime: 0, duration: 0, animFrame: null }
+  { source: null, gainNode: audioCtx.createGain(), timeout: null, startTime: 0, startOffset: 0, duration: 0, animFrame: null, track: null },
+  { source: null, gainNode: audioCtx.createGain(), timeout: null, startTime: 0, startOffset: 0, duration: 0, animFrame: null, track: null }
 ];
 
 // Master Volume
@@ -29,7 +29,7 @@ const volumeValueDisplay = document.getElementById('volume-value');
 const playlistUI = document.getElementById('playlist');
 const crossfaderUI = document.getElementById('crossfader');
 
-// --- 3. IMPORTATION ULTRA-RAPIDE ---
+// --- 3. IMPORTATION RAPIDE ---
 function handleFilesImport(files) {
   const audioFiles = Array.from(files).filter(file => 
     file.type.startsWith('audio/') || file.name.endsWith('.mp3') || file.name.endsWith('.wav')
@@ -53,7 +53,7 @@ function handleFilesImport(files) {
 if (audioInput) audioInput.addEventListener('change', (e) => handleFilesImport(e.target.files));
 if (folderInput) folderInput.addEventListener('change', (e) => handleFilesImport(e.target.files));
 
-// --- 4. MISE À JOUR & DRAG/DROP DE LA PLAYLIST ---
+// --- 4. PLAYLIST & GLISSER-DÉPOSER (DRAG & DROP) ---
 function updatePlaylistUI() {
   if (!playlistUI) return;
   playlistUI.innerHTML = '';
@@ -64,28 +64,34 @@ function updatePlaylistUI() {
     li.draggable = true;
 
     li.addEventListener('dragstart', (e) => {
-      e.dataTransfer.setData('text/plain', index);
+      e.dataTransfer.setData('text/plain', index.toString());
+      e.dataTransfer.effectAllowed = 'move';
     });
 
     playlistUI.appendChild(li);
   });
 }
 
-document.querySelectorAll('.drop-zone').forEach(zone => {
-  zone.addEventListener('dragover', (e) => e.preventDefault());
+// Configuration des zones d'atterrissage sur les Platines (Deck A / Deck B)
+document.querySelectorAll('.deck.drop-zone').forEach(zone => {
+  zone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  });
+
   zone.addEventListener('drop', async (e) => {
     e.preventDefault();
-    const trackIndex = parseInt(e.dataTransfer.getData('text/plain'), 10);
+    const trackIndexStr = e.dataTransfer.getData('text/plain');
+    const trackIndex = parseInt(trackIndexStr, 10);
     const targetDeckIdx = parseInt(zone.dataset.deck, 10);
 
     if (!isNaN(trackIndex) && playlist[trackIndex]) {
-      const track = playlist.splice(trackIndex, 1)[0];
-      playlist.unshift(track);
+      // Extraire le morceau de la liste et le charger sur le deck choisi
+      const selectedTrack = playlist.splice(trackIndex, 1)[0];
       updatePlaylistUI();
-      
-      if (isPlaying) {
-        await playTrackOnDeck(targetDeckIdx);
-      }
+
+      // Jouer ou charger sur la platine ciblée
+      await playTrackOnDeck(targetDeckIdx, 0, selectedTrack);
     }
   });
 });
@@ -98,7 +104,7 @@ if (btnClear) {
   });
 }
 
-// --- 5. REGLAGES FONDU ET VOLUME ---
+// --- 5. RÉGLAGES FONDU ET VOLUME ---
 if (fadeInput) {
   fadeInput.addEventListener('input', (e) => {
     overlapTime = parseFloat(e.target.value);
@@ -114,7 +120,7 @@ if (masterVolumeInput) {
   });
 }
 
-// --- 6. GESTION DU TEMPS ET ANIMATION COMPTEURS ---
+// --- 6. BARRE DE NAVIGATION & TIMERS ---
 function formatTime(seconds) {
   if (isNaN(seconds) || seconds < 0) seconds = 0;
   const m = Math.floor(seconds / 60);
@@ -134,7 +140,7 @@ function startTimer(deckIdx) {
   }
 
   function update() {
-    const elapsed = audioCtx.currentTime - deck.startTime;
+    const elapsed = (audioCtx.currentTime - deck.startTime) + deck.startOffset;
     const remaining = Math.max(0, deck.duration - elapsed);
 
     if (timeElem) {
@@ -153,7 +159,20 @@ function startTimer(deckIdx) {
   deck.animFrame = requestAnimationFrame(update);
 }
 
-// --- 7. DÉCODAGE & LECTURE DES TITRES ---
+// Configuration des événements de la barre de défilement (Seek Bar)
+['a', 'b'].forEach((prefix, idx) => {
+  const seekElem = document.getElementById(`seek-${prefix}`);
+  if (seekElem) {
+    seekElem.addEventListener('change', (e) => {
+      const newOffset = parseFloat(e.target.value);
+      if (decks[idx].track) {
+        playTrackOnDeck(idx, newOffset, decks[idx].track);
+      }
+    });
+  }
+});
+
+// --- 7. DÉCODAGE ET LECTURE AVEC ENCHAÎNEMENT ---
 async function getAudioBuffer(track) {
   if (track.buffer) return track.buffer;
   const arrayBuffer = await track.file.arrayBuffer();
@@ -161,21 +180,29 @@ async function getAudioBuffer(track) {
   return track.buffer;
 }
 
-async function playTrackOnDeck(deckIdx) {
-  if (playlist.length === 0) return;
+async function playTrackOnDeck(deckIdx, startOffset = 0, trackToPlay = null) {
+  if (audioCtx.state === 'suspended') {
+    await audioCtx.resume();
+  }
+
+  // Sélectionner le morceau passé ou prendre le premier de la file d'attente
+  const track = trackToPlay || playlist.shift();
+  if (!track) return;
+
+  updatePlaylistUI();
 
   const deck = decks[deckIdx];
-  const track = playlist[0]; // Prends le morceau en tête de liste
+  deck.track = track;
 
-  // Décodage
+  // Décodage du fichier audio
   const buffer = await getAudioBuffer(track);
 
-  // Mettre à jour le nom
+  // Mise à jour de l'affichage du titre
   const prefix = deckIdx === 0 ? 'a' : 'b';
   const titleElem = document.getElementById(`title-${prefix}`);
   if (titleElem) titleElem.textContent = track.name;
 
-  // Arrêter l'ancienne source
+  // Arrêt propre de l'ancienne source si elle jouait
   if (deck.source) {
     try { deck.source.stop(); } catch (e) {}
   }
@@ -187,45 +214,50 @@ async function playTrackOnDeck(deckIdx) {
 
   const now = audioCtx.currentTime;
   const duration = buffer.duration;
+  const remainingTime = duration - startOffset;
+
   deck.startTime = now;
+  deck.startOffset = startOffset;
   deck.duration = duration;
 
-  const fadeInDuration = Math.min(overlapTime, duration);
-  const fadeOutStart = Math.max(0, duration - overlapTime);
+  // Configuration des fondus (Fade In / Fade Out)
+  const fadeInDuration = Math.min(overlapTime, remainingTime);
+  const fadeOutStart = Math.max(0, duration - overlapTime - startOffset);
 
   deck.gainNode.gain.cancelScheduledValues(now);
 
-  // Fondu d'entrée
+  // Transition en entrée
   deck.gainNode.gain.setValueAtTime(0.001, now);
   deck.gainNode.gain.linearRampToValueAtTime(1, now + fadeInDuration);
 
-  // Fondu de sortie
-  deck.gainNode.gain.setValueAtTime(1, now + fadeOutStart);
-  deck.gainNode.gain.linearRampToValueAtTime(0.001, now + duration);
+  // Transition en sortie
+  if (fadeOutStart > 0) {
+    deck.gainNode.gain.setValueAtTime(1, now + fadeOutStart);
+    deck.gainNode.gain.linearRampToValueAtTime(0.001, now + remainingTime);
+  }
 
-  deck.source.start(now);
+  // Démarrer la lecture au point désiré
+  deck.source.start(now, startOffset);
+  isPlaying = true;
 
-  // Lancement du compteur de temps
+  // Lancer le timer d'affichage
   startTimer(deckIdx);
 
-  // Positionnement du Crossfader
+  // Placer le crossfader du bon côté
   if (crossfaderUI) {
     crossfaderUI.value = deckIdx === 0 ? 0 : 1;
   }
 
-  // Enchaînement sur le deck suivant
+  // Programmer le démarrage automatique du morceau suivant sur l'autre platine
   if (deck.timeout) clearTimeout(deck.timeout);
 
-  const triggerNextIn = Math.max(0, duration - overlapTime) * 1000;
+  const timeUntilNext = Math.max(0, remainingTime - overlapTime) * 1000;
 
   deck.timeout = setTimeout(() => {
-    playlist.shift(); // Retire le morceau terminé
-    updatePlaylistUI();
-
     const nextDeckIdx = deckIdx === 0 ? 1 : 0;
 
     if (playlist.length > 0) {
-      playTrackOnDeck(nextDeckIdx);
+      playTrackOnDeck(nextDeckIdx, 0);
     } else {
       isPlaying = false;
       if (btnPlayAll) {
@@ -234,21 +266,17 @@ async function playTrackOnDeck(deckIdx) {
       }
       if (btnPause) btnPause.disabled = true;
     }
-  }, triggerNextIn);
+  }, timeUntilNext);
 }
 
-// --- 8. BOUTONS CONTROLES ---
+// --- 8. CONTROLES PLAY ET PAUSE ---
 if (btnPlayAll) {
   btnPlayAll.addEventListener('click', async () => {
-    if (audioCtx.state === 'suspended') {
-      await audioCtx.resume();
-    }
     if (playlist.length === 0) return;
 
-    isPlaying = true;
     btnPlayAll.disabled = true;
     if (btnPause) btnPause.disabled = false;
 
-    playTrackOnDeck(0);
+    await playTrackOnDeck(0, 0);
   });
 }
