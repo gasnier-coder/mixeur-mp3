@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Mixeur mp3</title>
+  <title>MIXEUR MP3</title>
   <link rel="stylesheet" href="style.css">
   <link rel="manifest" href="manifest.json">
 
@@ -16,16 +16,16 @@
 <body>
 
   <div class="mixer-board">
-    <!-- Image Titre (Guillemet corrigé ici) -->
-    <img src="https://github.com/gasnier-coder/mixeur-mp3/blob/main/TABLE%20DE%20MIXAGE%20ROUGE%20ET%20VERT.png?raw=true" alt="Titre visuel" class="title-image">
+   <img src="https://github.com/gasnier-coder/mixeur-mp3/blob/main/TABLE%20DE%20MIXAGE%20ROUGE%20ET%20VERT.png?raw=true" alt="Titre visuel" class="title-image">
 
-    <!-- CONTROLES DU HAUT -->
+    <!-- HAUT DE PAGE STRICTEMENT CONFORME À TON CSS -->
     <div class="top-controls">
       <label class="btn-import">
-        📁 Importer Fichiers
+        📁 Importer MP3
         <input type="file" id="audio-input" multiple accept="audio/*">
       </label>
 
+      <!-- NOUVEAU BOUTON AJOUTÉ : IMPORTER DOSSIER -->
       <label class="btn-import">
         📂 Importer Dossier
         <input type="file" id="folder-input" webkitdirectory directory multiple>
@@ -35,8 +35,8 @@
       <button id="btn-pause" class="btn-secondary" disabled>❚❚ Pause</button>
 
       <div class="control-box">
-        <label for="fade-time">Fondu : <span id="fade-value">8</span>s</label>
-        <input type="range" id="fade-time" min="2" max="20" value="8">
+        <label for="fade-time">Fondu : <span id="fade-value">10</span>s</label>
+        <input type="range" id="fade-time" min="2" max="20" value="4">
       </div>
 
       <div class="control-box">
@@ -45,7 +45,7 @@
       </div>
     </div>
 
-    <!-- PLATINES & LOGO CENTRAL -->
+    <!-- PLATINES & LOGO CENTRAL AU-DESSUS DU CROSSFADER -->
     <div class="decks-container">
 
       <!-- Platine A -->
@@ -57,7 +57,7 @@
         <div class="vu-meter"><div id="vu-a" class="vu-bar"></div></div>
       </div>
 
-      <!-- Console centrale -->
+      <!-- Console centrale (Logo + Crossfader) -->
       <div class="center-console crossfader-container">
         <img src="https://github.com/gasnier-coder/Tirage-Bingo/blob/main/logo2.gif?raw=true" alt="Gasnier Tech" class="crossfader-logo">
         <input type="range" id="crossfader" min="0" max="1" step="0.01" value="0.5">

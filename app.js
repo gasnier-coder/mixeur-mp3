@@ -1,282 +1,472 @@
-// --- 1. INITIALISATION AUDIO & VARIABLES GLOBALES ---
-const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-let playlist = []; // Contient { name, file, buffer }
+let audioCtx;
+let masterGainNode;
+
+let playlist = [];
 let overlapTime = 8;
+
 let isPlaying = false;
+let isPaused = false;
+let pauseOffset = 0;
+let isUserSeeking = false;
 
-// Structure des deux platines
-const decks = [
-  { source: null, gainNode: audioCtx.createGain(), timeout: null, startTime: 0, startOffset: 0, duration: 0, animFrame: null, track: null },
-  { source: null, gainNode: audioCtx.createGain(), timeout: null, startTime: 0, startOffset: 0, duration: 0, animFrame: null, track: null }
-];
+let draggedItemIndex = null;
 
-// Master Volume
-const masterGain = audioCtx.createGain();
-decks[0].gainNode.connect(masterGain);
-decks[1].gainNode.connect(masterGain);
-masterGain.connect(audioCtx.destination);
-
-// --- 2. RÉCUPÉRATION DES ÉLÉMENTS HTML ---
-const audioInput = document.getElementById('audio-input');
-const folderInput = document.getElementById('folder-input');
-const btnPlayAll = document.getElementById('btn-play-all');
+const inputFiles = document.getElementById('audio-input');
+const inputFolder = document.getElementById('folder-input'); // NOUVEAU BOUTON DOSSIER
+const btnPlay = document.getElementById('btn-play-all');
 const btnPause = document.getElementById('btn-pause');
 const btnClear = document.getElementById('btn-clear-playlist');
-const fadeInput = document.getElementById('fade-time');
-const fadeValueDisplay = document.getElementById('fade-value');
-const masterVolumeInput = document.getElementById('master-volume');
-const volumeValueDisplay = document.getElementById('volume-value');
 const playlistUI = document.getElementById('playlist');
 const crossfaderUI = document.getElementById('crossfader');
 
-// --- 3. IMPORTATION RAPIDE ---
-function handleFilesImport(files) {
-  const audioFiles = Array.from(files).filter(file => 
-    file.type.startsWith('audio/') || file.name.endsWith('.mp3') || file.name.endsWith('.wav')
-  );
+const fadeTimeInput = document.getElementById('fade-time');
+const fadeValueDisplay = document.getElementById('fade-value');
+const masterVolumeInput = document.getElementById('master-volume');
+const volumeValueDisplay = document.getElementById('volume-value');
 
-  for (const file of audioFiles) {
-    playlist.push({
-      name: file.name,
-      file: file,
-      buffer: null
-    });
+const decks = [
+  { 
+    id: 'a', 
+    source: null, 
+    gainNode: null, 
+    buffer: null,
+    startTime: 0,
+    timer: null,
+    nextTimeout: null,
+    titleEl: document.getElementById('title-a'), 
+    timeEl: document.getElementById('time-a'),
+    seekEl: document.getElementById('seek-a')
+  },
+  { 
+    id: 'b', 
+    source: null, 
+    gainNode: null, 
+    buffer: null,
+    startTime: 0,
+    timer: null,
+    nextTimeout: null,
+    titleEl: document.getElementById('title-b'), 
+    timeEl: document.getElementById('time-b'),
+    seekEl: document.getElementById('seek-b')
   }
+];
 
-  updatePlaylistUI();
+let activeDeckIndex = 0; // Platine en cours de lecture (0 = A, 1 = B)
 
-  if (playlist.length > 0 && btnPlayAll) {
-    btnPlayAll.disabled = false;
+function initAudioContext() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    masterGainNode = audioCtx.createGain();
+    masterGainNode.gain.value = parseFloat(masterVolumeInput.value);
+    masterGainNode.connect(audioCtx.destination);
+  }
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
   }
 }
 
-if (audioInput) audioInput.addEventListener('change', (e) => handleFilesImport(e.target.files));
-if (folderInput) folderInput.addEventListener('change', (e) => handleFilesImport(e.target.files));
+fadeTimeInput.addEventListener('input', (e) => {
+  overlapTime = parseInt(e.target.value);
+  fadeValueDisplay.textContent = overlapTime;
+});
 
-// --- 4. PLAYLIST & GLISSER-DÉPOSER (DRAG & DROP) ---
-function updatePlaylistUI() {
-  if (!playlistUI) return;
-  playlistUI.innerHTML = '';
-  
-  playlist.forEach((track, index) => {
-    const li = document.createElement('li');
-    li.textContent = `${index + 1}. ${track.name}`;
-    li.draggable = true;
+masterVolumeInput.addEventListener('input', (e) => {
+  const val = parseFloat(e.target.value);
+  volumeValueDisplay.textContent = Math.round(val * 100);
+  if (masterGainNode) {
+    masterGainNode.gain.setValueAtTime(val, audioCtx.currentTime);
+  }
+});
 
-    li.addEventListener('dragstart', (e) => {
-      e.dataTransfer.setData('text/plain', index.toString());
-      e.dataTransfer.effectAllowed = 'move';
+// Importation de fichiers individuel
+inputFiles.addEventListener('change', (e) => {
+  const files = Array.from(e.target.files);
+  files.forEach(file => {
+    if (file.type.includes('audio') || file.name.endsWith('.mp3')) {
+      playlist.push(file);
+    }
+  });
+  updatePlaylistUI();
+  updateStandbyDeckDisplay();
+  if (playlist.length > 0 && !isPlaying) btnPlay.disabled = false;
+});
+
+// Importation de dossier complet
+if (inputFolder) {
+  inputFolder.addEventListener('change', (e) => {
+    const files = Array.from(e.target.files);
+    files.forEach(file => {
+      if (file.type.includes('audio') || file.name.endsWith('.mp3')) {
+        playlist.push(file);
+      }
     });
+
+    // Tri alphabétique par défaut des morceaux du dossier
+    playlist.sort((a, b) => a.name.localeCompare(b.name));
+
+    updatePlaylistUI();
+    updateStandbyDeckDisplay();
+    if (playlist.length > 0 && !isPlaying) btnPlay.disabled = false;
+  });
+}
+
+btnClear.addEventListener('click', () => {
+  playlist = [];
+  isPlaying = false;
+  isPaused = false;
+  
+  stopAllDecks();
+  updatePlaylistUI();
+  
+  btnPlay.disabled = true;
+  btnPause.disabled = true;
+});
+
+function stopAllDecks() {
+  decks.forEach(deck => {
+    if (deck.source) { try { deck.source.stop(); } catch(e){} }
+    clearTimeout(deck.nextTimeout);
+    clearInterval(deck.timer);
+    deck.timer = null;
+    deck.titleEl.textContent = "Aucun morceau";
+    deck.titleEl.classList.remove('standby');
+    deck.timeEl.textContent = "-00:00 / 00:00";
+    deck.seekEl.value = 0;
+    deck.seekEl.disabled = true;
+  });
+}
+
+function removeTrack(indexToRemove) {
+  if (indexToRemove < 0 || indexToRemove >= playlist.length) return;
+  playlist.splice(indexToRemove, 1);
+
+  if (playlist.length === 0 && !isPlaying) {
+    btnPlay.disabled = true;
+  }
+  updatePlaylistUI();
+  updateStandbyDeckDisplay();
+}
+
+function updatePlaylistUI() {
+  playlistUI.innerHTML = '';
+  playlist.forEach((file, index) => {
+    const li = document.createElement('li');
+    li.draggable = true;
+    li.dataset.index = index;
+
+    if (index === 0 && isPlaying) li.classList.add('active');
+
+    const titleSpan = document.createElement('span');
+    titleSpan.className = 'track-title';
+    titleSpan.textContent = `${index + 1}. ${file.name}`;
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'btn-delete';
+    deleteBtn.textContent = '✖';
+    deleteBtn.title = 'Retirer de la file d\'attente';
+    
+    deleteBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      removeTrack(index);
+    });
+
+    li.appendChild(titleSpan);
+    li.appendChild(deleteBtn);
+
+    li.addEventListener('dragstart', handleDragStart);
+    li.addEventListener('dragover', handleDragOver);
+    li.addEventListener('dragleave', handleDragLeave);
+    li.addEventListener('drop', handleDropOnItem);
+    li.addEventListener('dragend', handleDragEnd);
 
     playlistUI.appendChild(li);
   });
 }
 
-// Configuration des zones d'atterrissage sur les Platines (Deck A / Deck B)
-document.querySelectorAll('.deck.drop-zone').forEach(zone => {
-  zone.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-  });
-
-  zone.addEventListener('drop', async (e) => {
-    e.preventDefault();
-    const trackIndexStr = e.dataTransfer.getData('text/plain');
-    const trackIndex = parseInt(trackIndexStr, 10);
-    const targetDeckIdx = parseInt(zone.dataset.deck, 10);
-
-    if (!isNaN(trackIndex) && playlist[trackIndex]) {
-      // Extraire le morceau de la liste et le charger sur le deck choisi
-      const selectedTrack = playlist.splice(trackIndex, 1)[0];
-      updatePlaylistUI();
-
-      // Jouer ou charger sur la platine ciblée
-      await playTrackOnDeck(targetDeckIdx, 0, selectedTrack);
-    }
-  });
-});
-
-if (btnClear) {
-  btnClear.addEventListener('click', () => {
-    playlist = [];
-    updatePlaylistUI();
-    if (btnPlayAll) btnPlayAll.disabled = true;
-  });
+function handleDragStart(e) {
+  draggedItemIndex = parseInt(this.dataset.index);
+  this.classList.add('dragging');
+  e.dataTransfer.setData('text/plain', draggedItemIndex);
 }
 
-// --- 5. RÉGLAGES FONDU ET VOLUME ---
-if (fadeInput) {
-  fadeInput.addEventListener('input', (e) => {
-    overlapTime = parseFloat(e.target.value);
-    if (fadeValueDisplay) fadeValueDisplay.textContent = overlapTime;
-  });
+function handleDragOver(e) {
+  e.preventDefault();
+  const rect = this.getBoundingClientRect();
+  const midPoint = rect.top + rect.height / 2;
+
+  if (e.clientY < midPoint) {
+    this.classList.add('drag-over-top');
+    this.classList.remove('drag-over-bottom');
+  } else {
+    this.classList.add('drag-over-bottom');
+    this.classList.remove('drag-over-top');
+  }
 }
 
-if (masterVolumeInput) {
-  masterVolumeInput.addEventListener('input', (e) => {
-    const val = parseFloat(e.target.value);
-    masterGain.gain.setValueAtTime(val, audioCtx.currentTime);
-    if (volumeValueDisplay) volumeValueDisplay.textContent = Math.round(val * 100);
-  });
+function handleDragLeave() {
+  this.classList.remove('drag-over-top', 'drag-over-bottom');
 }
 
-// --- 6. BARRE DE NAVIGATION & TIMERS ---
-function formatTime(seconds) {
-  if (isNaN(seconds) || seconds < 0) seconds = 0;
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-}
+function handleDropOnItem(e) {
+  e.preventDefault();
+  this.classList.remove('drag-over-top', 'drag-over-bottom');
+  
+  const targetIndex = parseInt(this.dataset.index);
+  if (draggedItemIndex === null || draggedItemIndex === targetIndex) return;
 
-function startTimer(deckIdx) {
-  const deck = decks[deckIdx];
-  const prefix = deckIdx === 0 ? 'a' : 'b';
-  const timeElem = document.getElementById(`time-${prefix}`);
-  const seekElem = document.getElementById(`seek-${prefix}`);
+  const rect = this.getBoundingClientRect();
+  const midPoint = rect.top + rect.height / 2;
+  const insertAfter = e.clientY >= midPoint;
 
-  if (seekElem) {
-    seekElem.max = deck.duration;
-    seekElem.disabled = false;
+  const [movedItem] = playlist.splice(draggedItemIndex, 1);
+  
+  let destinationIndex = targetIndex;
+  if (draggedItemIndex < targetIndex) {
+    destinationIndex = insertAfter ? targetIndex : targetIndex - 1;
+  } else {
+    destinationIndex = insertAfter ? targetIndex + 1 : targetIndex;
   }
 
-  function update() {
-    const elapsed = (audioCtx.currentTime - deck.startTime) + deck.startOffset;
-    const remaining = Math.max(0, deck.duration - elapsed);
-
-    if (timeElem) {
-      timeElem.textContent = `-${formatTime(remaining)} / ${formatTime(deck.duration)}`;
-    }
-    if (seekElem) {
-      seekElem.value = Math.min(elapsed, deck.duration);
-    }
-
-    if (elapsed < deck.duration && isPlaying) {
-      deck.animFrame = requestAnimationFrame(update);
-    }
-  }
-
-  if (deck.animFrame) cancelAnimationFrame(deck.animFrame);
-  deck.animFrame = requestAnimationFrame(update);
-}
-
-// Configuration des événements de la barre de défilement (Seek Bar)
-['a', 'b'].forEach((prefix, idx) => {
-  const seekElem = document.getElementById(`seek-${prefix}`);
-  if (seekElem) {
-    seekElem.addEventListener('change', (e) => {
-      const newOffset = parseFloat(e.target.value);
-      if (decks[idx].track) {
-        playTrackOnDeck(idx, newOffset, decks[idx].track);
-      }
-    });
-  }
-});
-
-// --- 7. DÉCODAGE ET LECTURE AVEC ENCHAÎNEMENT ---
-async function getAudioBuffer(track) {
-  if (track.buffer) return track.buffer;
-  const arrayBuffer = await track.file.arrayBuffer();
-  track.buffer = await audioCtx.decodeAudioData(arrayBuffer);
-  return track.buffer;
-}
-
-async function playTrackOnDeck(deckIdx, startOffset = 0, trackToPlay = null) {
-  if (audioCtx.state === 'suspended') {
-    await audioCtx.resume();
-  }
-
-  // Sélectionner le morceau passé ou prendre le premier de la file d'attente
-  const track = trackToPlay || playlist.shift();
-  if (!track) return;
-
+  playlist.splice(destinationIndex, 0, movedItem);
   updatePlaylistUI();
+  updateStandbyDeckDisplay();
+}
 
-  const deck = decks[deckIdx];
-  deck.track = track;
+function handleDragEnd() {
+  this.classList.remove('dragging');
+  document.querySelectorAll('#playlist li').forEach(li => {
+    li.classList.remove('drag-over-top', 'drag-over-bottom');
+  });
+  document.querySelectorAll('.deck').forEach(d => d.classList.remove('drag-over'));
+}
 
-  // Décodage du fichier audio
-  const buffer = await getAudioBuffer(track);
+/* --- Glisser-Déposer sur les Platines A / B --- */
+document.querySelectorAll('.drop-zone').forEach(deckEl => {
+  deckEl.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    deckEl.classList.add('drag-over');
+  });
 
-  // Mise à jour de l'affichage du titre
-  const prefix = deckIdx === 0 ? 'a' : 'b';
-  const titleElem = document.getElementById(`title-${prefix}`);
-  if (titleElem) titleElem.textContent = track.name;
+  deckEl.addEventListener('dragleave', () => {
+    deckEl.classList.remove('drag-over');
+  });
 
-  // Arrêt propre de l'ancienne source si elle jouait
-  if (deck.source) {
-    try { deck.source.stop(); } catch (e) {}
+  deckEl.addEventListener('drop', (e) => {
+    e.preventDefault();
+    deckEl.classList.remove('drag-over');
+    
+    if (draggedItemIndex !== null) {
+      const droppedOnDeckIdx = parseInt(deckEl.dataset.deck);
+      const [movedItem] = playlist.splice(draggedItemIndex, 1);
+
+      if (!isPlaying) {
+        playlist.unshift(movedItem);
+        activeDeckIndex = droppedOnDeckIdx;
+        updatePlaylistUI();
+        initAudioContext();
+        isPlaying = true;
+        btnPlay.disabled = true;
+        btnPause.disabled = false;
+        playTrackOnDeck(activeDeckIndex, 0);
+      } else {
+        if (droppedOnDeckIdx === activeDeckIndex) {
+          playlist.unshift(movedItem);
+          playTrackOnDeck(activeDeckIndex, 0);
+        } else {
+          playlist.splice(1, 0, movedItem);
+          updatePlaylistUI();
+          updateStandbyDeckDisplay();
+        }
+      }
+    }
+  });
+});
+
+btnPlay.addEventListener('click', () => {
+  initAudioContext();
+  if (isPaused) {
+    isPaused = false;
+    btnPlay.disabled = true;
+    btnPause.disabled = false;
+    playTrackOnDeck(activeDeckIndex, pauseOffset);
+  } else if (!isPlaying && playlist.length > 0) {
+    isPlaying = true;
+    btnPlay.disabled = true;
+    btnPause.disabled = false;
+    playTrackOnDeck(activeDeckIndex, 0);
   }
-  if (deck.animFrame) cancelAnimationFrame(deck.animFrame);
+});
+
+btnPause.addEventListener('click', () => {
+  if (isPlaying && !isPaused) {
+    isPaused = true;
+    btnPlay.disabled = false;
+    btnPause.disabled = true;
+    btnPlay.textContent = "▶ Reprendre";
+
+    const currentDeck = decks[activeDeckIndex];
+    pauseOffset = audioCtx.currentTime - currentDeck.startTime;
+
+    if (currentDeck.source) { try { currentDeck.source.stop(); } catch(e){} }
+    clearTimeout(currentDeck.nextTimeout);
+    if (currentDeck.timer) {
+      clearInterval(currentDeck.timer);
+      currentDeck.timer = null;
+    }
+  }
+});
+
+/* --- MISE À JOUR RIGOUREUSE DE LA PLATINE PASSIVE --- */
+function updateStandbyDeckDisplay() {
+  const standbyDeckIdx = activeDeckIndex === 0 ? 1 : 0;
+  const standbyDeck = decks[standbyDeckIdx];
+
+  const nextTrackIndex = isPlaying ? 1 : 0;
+
+  if (playlist.length > nextTrackIndex) {
+    standbyDeck.titleEl.textContent = `▶ Prochain : ${playlist[nextTrackIndex].name}`;
+    standbyDeck.titleEl.classList.add('standby');
+    standbyDeck.timeEl.textContent = "-00:00 / 00:00";
+    standbyDeck.seekEl.value = 0;
+    standbyDeck.seekEl.disabled = true;
+  } else {
+    standbyDeck.titleEl.textContent = "Aucun morceau";
+    standbyDeck.titleEl.classList.remove('standby');
+    standbyDeck.timeEl.textContent = "-00:00 / 00:00";
+    standbyDeck.seekEl.value = 0;
+    standbyDeck.seekEl.disabled = true;
+  }
+}
+
+async function playTrackOnDeck(deckIdx, startOffset = 0) {
+  if (playlist.length === 0) {
+    isPlaying = false;
+    btnPlay.disabled = false;
+    btnPlay.textContent = "▶ Démarrer";
+    btnPause.disabled = true;
+    return;
+  }
+
+  activeDeckIndex = deckIdx;
+  const deck = decks[deckIdx];
+  const currentFile = playlist[0];
+
+  if (deck.source) {
+    try { deck.source.stop(); } catch(e){}
+  }
+  clearTimeout(deck.nextTimeout);
+  if (deck.timer) {
+    clearInterval(deck.timer);
+    deck.timer = null;
+  }
+
+  const arrayBuffer = await currentFile.arrayBuffer();
+  deck.buffer = await audioCtx.decodeAudioData(arrayBuffer);
 
   deck.source = audioCtx.createBufferSource();
-  deck.source.buffer = buffer;
+  deck.source.buffer = deck.buffer;
+
+  deck.gainNode = audioCtx.createGain();
   deck.source.connect(deck.gainNode);
+  deck.gainNode.connect(masterGainNode);
+
+  deck.titleEl.textContent = currentFile.name;
+  deck.titleEl.classList.remove('standby');
+  deck.seekEl.disabled = false;
+  deck.seekEl.max = deck.buffer.duration;
+  deck.seekEl.value = startOffset;
+  
+  updatePlaylistUI();
+  updateStandbyDeckDisplay();
 
   const now = audioCtx.currentTime;
-  const duration = buffer.duration;
+  const duration = deck.buffer.duration;
   const remainingTime = duration - startOffset;
 
-  deck.startTime = now;
-  deck.startOffset = startOffset;
-  deck.duration = duration;
+  deck.startTime = now - startOffset;
 
-  // Configuration des fondus (Fade In / Fade Out)
-  const fadeInDuration = Math.min(overlapTime, remainingTime);
-  const fadeOutStart = Math.max(0, duration - overlapTime - startOffset);
+  // --- GESTION DU VOLUME & FONDU (CORRIGÉE POUR ANDROID) ---
+  const fadeInDuration = Math.min(2, remainingTime); 
+  const fadeOutStart = Math.max(0, duration - overlapTime);
 
-  deck.gainNode.gain.cancelScheduledValues(now);
+  if (startOffset > 0) {
+    deck.gainNode.gain.setValueAtTime(1, now);
+  } else {
+    // Correction du "0,2" en "0.01" avec un point
+    deck.gainNode.gain.setValueAtTime(0.01, now);
+    deck.gainNode.gain.linearRampToValueAtTime(1, now + fadeInDuration);
+  }
 
-  // Transition en entrée
-  deck.gainNode.gain.setValueAtTime(0.001, now);
-  deck.gainNode.gain.linearRampToValueAtTime(1, now + fadeInDuration);
-
-  // Transition en sortie
-  if (fadeOutStart > 0) {
-    deck.gainNode.gain.setValueAtTime(1, now + fadeOutStart);
+  if (startOffset < fadeOutStart) {
+    const timeUntilFadeOut = fadeOutStart - startOffset;
+    deck.gainNode.gain.setValueAtTime(1, now + timeUntilFadeOut);
+    deck.gainNode.gain.linearRampToValueAtTime(0.001, now + remainingTime);
+  } else if (startOffset >= fadeOutStart && startOffset > 0) {
     deck.gainNode.gain.linearRampToValueAtTime(0.001, now + remainingTime);
   }
 
-  // Démarrer la lecture au point désiré
   deck.source.start(now, startOffset);
-  isPlaying = true;
+  crossfaderUI.value = deckIdx === 0 ? 0 : 1;
 
-  // Lancer le timer d'affichage
-  startTimer(deckIdx);
+  const triggerNextIn = Math.max(0, duration - startOffset - overlapTime) * 1000;
 
-  // Placer le crossfader du bon côté
-  if (crossfaderUI) {
-    crossfaderUI.value = deckIdx === 0 ? 0 : 1;
-  }
+  deck.nextTimeout = setTimeout(() => {
+    playlist.shift();
 
-  // Programmer le démarrage automatique du morceau suivant sur l'autre platine
-  if (deck.timeout) clearTimeout(deck.timeout);
-
-  const timeUntilNext = Math.max(0, remainingTime - overlapTime) * 1000;
-
-  deck.timeout = setTimeout(() => {
     const nextDeckIdx = deckIdx === 0 ? 1 : 0;
 
     if (playlist.length > 0) {
       playTrackOnDeck(nextDeckIdx, 0);
     } else {
       isPlaying = false;
-      if (btnPlayAll) {
-        btnPlayAll.disabled = false;
-        btnPlayAll.textContent = "▶ Démarrer";
-      }
-      if (btnPause) btnPause.disabled = true;
+      btnPlay.disabled = false;
+      btnPlay.textContent = "▶ Démarrer";
+      btnPause.disabled = true;
+      
+      stopAllDecks();
+      updatePlaylistUI();
     }
-  }, timeUntilNext);
+  }, triggerNextIn);
+
+  updateTrackUI(deck);
 }
 
-// --- 8. CONTROLES PLAY ET PAUSE ---
-if (btnPlayAll) {
-  btnPlayAll.addEventListener('click', async () => {
-    if (playlist.length === 0) return;
+function updateTrackUI(deck) {
+  if (deck.timer) {
+    clearInterval(deck.timer);
+  }
 
-    btnPlayAll.disabled = true;
-    if (btnPause) btnPause.disabled = false;
+  deck.timer = setInterval(() => {
+    if (!audioCtx || isPaused || isUserSeeking) return;
+    const currentPos = audioCtx.currentTime - deck.startTime;
+    const duration = deck.buffer ? deck.buffer.duration : 0;
 
-    await playTrackOnDeck(0, 0);
+    if (currentPos <= duration) {
+      deck.seekEl.value = currentPos;
+      const remainingSeconds = Math.max(0, duration - currentPos);
+      deck.timeEl.textContent = `-${formatTime(remainingSeconds)} / ${formatTime(duration)}`;
+    } else {
+      clearInterval(deck.timer);
+      deck.timer = null;
+    }
+  }, 250);
+}
+
+// Barre de recherche (Seek bar)
+decks.forEach((deck, idx) => {
+  deck.seekEl.addEventListener('mousedown', () => { isUserSeeking = true; });
+  deck.seekEl.addEventListener('touchstart', () => { isUserSeeking = true; });
+
+  deck.seekEl.addEventListener('change', (e) => {
+    isUserSeeking = false;
+    if (!isPlaying) return;
+    const newTime = parseFloat(e.target.value);
+    playTrackOnDeck(idx, newTime);
   });
+});
+
+function formatTime(seconds) {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 }

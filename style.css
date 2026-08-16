@@ -18,13 +18,7 @@ body {
   border: 1px solid #3a3b40;
 }
 
-.title-image {
-  display: block;
-  margin: 0 auto 20px auto;
-  max-width: 500px;
-  height: auto;
-  filter: drop-shadow(0 0 6px #27F531);
-}
+h2 { text-align: center; margin-bottom: 20px; color: #27F531; text-transform: uppercase; letter-spacing: 2px; }
 
 .top-controls { display: flex; gap: 12px; justify-content: center; align-items: center; margin-bottom: 25px; flex-wrap: wrap; }
 
@@ -41,10 +35,12 @@ body {
 }
 
 .btn-import input { display: none; }
+.btn-import:hover, .btn-primary:hover:not(:disabled), .btn-secondary:hover:not(:disabled) { background: #00d2ff; color: #1a1a1e; }
 .btn-primary:disabled, .btn-secondary:disabled { opacity: 0.4; cursor: not-allowed; }
 
-.btn-danger { background: #27F531; border-color: #6e3333; color: #1a1a1e; }
-.btn-danger:hover { background: #D9340F; color: #fff; }
+.btn-danger { background: #27F531; border-color: #6e3333; }
+.btn-danger:hover { background: 
+#D9340F; color: #fff; }
 
 .control-box { display: flex; align-items: center; gap: 8px; background: #1e1f23; padding: 6px 10px; border-radius: 6px; font-size: 0.8em; border: 1px solid #33343a; }
 .control-box input { width: 70px; }
@@ -58,7 +54,13 @@ body {
   border-radius: 8px;
   border: 2px dashed #33343a;
   text-align: center;
+  transition: border-color 0.2s, background-color 0.2s;
   position: relative;
+}
+
+.deck.drag-over {
+  border-color: #00d2ff;
+  background-color: #223344;
 }
 
 .drop-hint {
@@ -68,7 +70,6 @@ body {
   margin-bottom: 5px;
 }
 
-/* Titre en lecture : TON ROUGE #ED2607 */
 .track-info {
   font-size: 0.9em;
   font-weight: bold;
@@ -79,7 +80,6 @@ body {
   margin: 8px 0;
 }
 
-/* Titre en attente : TON VERT #12E532 */
 .track-info.standby {
   color: #12E532;
   font-style: italic;
@@ -91,28 +91,11 @@ body {
 .seek-bar { width: 100%; margin-bottom: 12px; accent-color: #ffaa00; cursor: pointer; }
 
 .vu-meter { background: #111; height: 8px; border-radius: 4px; overflow: hidden; }
-.vu-bar { background: #00ffcc; height: 100%; width: 0%; }
+.vu-bar { background: #00ffcc; height: 100%; width: 0%; transition: width 0.1s linear; }
 
-/* Console centrale & Logo */
-.crossfader-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  width: 180px;
-}
-
-.crossfader-logo {
-  max-width: 150px;
-  height: auto;
-  object-fit: contain;
-  margin-bottom: 10px;
-}
-
+.center-console { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 180px; }
 input[type=range] { accent-color: #D9BE0F; }
 
-/* Playlist */
 .playlist-section { background: #1e1f23; padding: 15px; border-radius: 8px; border: 1px solid #33343a; }
 .playlist-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
 .playlist-header h3 { font-size: 0.95em; color: #aaa; }
@@ -128,13 +111,80 @@ input[type=range] { accent-color: #D9BE0F; }
   display: flex;
   justify-content: space-between;
   align-items: center;
+  cursor: grab;
   border: 1px solid #33343a;
   user-select: none;
+  transition: transform 0.1s ease;
 }
+
+#playlist li:active { cursor: grabbing; }
+#playlist li.dragging { opacity: 0.3; background: #3a3d4a; }
+
+#playlist li.drag-over-top { border-top: 3px solid #D9BE0F; }
+#playlist li.drag-over-bottom { border-bottom: 3px solid #D9BE0F; }
 
 #playlist li.active { color: #D9BE0F; font-weight: bold; border-left: 4px solid #D9BE0F; background: #2a313d; }
 
-.track-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: 10px; }
+.track-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-right: 10px;
+}
 
-.btn-delete { background: transparent; border: none; color: #888; font-size: 1em; cursor: pointer; }
-.btn-delete:hover { color: #ff4747; }
+.btn-delete {
+  background: transparent;
+  border: none;
+  color: #888;
+  font-size: 1em;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 3px;
+  transition: color 0.2s, background 0.2s;
+}
+
+.btn-delete:hover {
+  color: #ff4747;
+  background: #888;
+}
+/* Conteneur du crossfader */
+./* Style du conteneur central */
+.crossfader-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+/* Taille et rendu du logo central */
+.crossfader-logo {
+  width: 900px;         /* Ajuste la largeur (ex: 80px, 90px ou 100px) selon tes préférences */
+  height: auto;
+  object-fit: contain;
+  margin-bottom: 10px;
+}
+.title-image {
+  display: block;
+  margin: 0 auto 20px auto;
+  max-width: 500px;
+  height: auto;
+  filter: drop-shadow(0 0 6px #27F531);
+}
+
+/* Empile le logo et le curseur verticalement */
+./* Limite strictement la taille du logo au-dessus du crossfader */
+.crossfader-container {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+}
+
+.crossfader-logo {
+  max-width: 200px !important; /* Empeche le logo d'exploser sur tout l'ecran */
+  height: auto !important;
+  display: block !important;
+  object-fit: contain !important;
+}
