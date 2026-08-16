@@ -1,0 +1,25 @@
+{
+  "short_name": "Mixage",
+  "name": "Mixeur mp3",
+  "description": "Application de mixage audio et enchaînement automatique de morceaux MP3",
+  "icons": [
+    {
+      "src": "icon-192.jpg",
+      "type": "image/jpeg",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "./index.html",
+  "background_color": "#1e1e24",
+  "theme_color": "#1e1e24",
+  "display": "standalone",
+  "orientation": "landscape",
+  "scope": "./"
+}

@@ -1,0 +1,140 @@
+* { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+
+body {
+  background-color: #1a1a1e;
+  color: #e0e0e0;
+  display: flex;
+  justify-content: center;
+  padding: 20px;
+}
+
+.mixer-board {
+  background-color: #28292e;
+  border-radius: 12px;
+  padding: 24px;
+  width: 100%;
+  max-width: 1200px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  border: 1px solid #3a3b40;
+}
+
+.title-image {
+  display: block;
+  margin: 0 auto 20px auto;
+  max-width: 500px;
+  height: auto;
+  filter: drop-shadow(0 0 6px #27F531);
+}
+
+.top-controls { display: flex; gap: 12px; justify-content: center; align-items: center; margin-bottom: 25px; flex-wrap: wrap; }
+
+.btn-import, .btn-primary, .btn-secondary, .btn-danger {
+  background: #3a3f4d;
+  color: #fff;
+  padding: 12px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid #525866;
+  font-weight: bold;
+  font-size: 0.85em;
+  transition: 0.2s;
+}
+
+.btn-import input { display: none; }
+.btn-primary:disabled, .btn-secondary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.btn-danger { background: #27F531; border-color: #6e3333; color: #1a1a1e; }
+.btn-danger:hover { background: #D9340F; color: #fff; }
+
+.control-box { display: flex; align-items: center; gap: 8px; background: #1e1f23; padding: 6px 10px; border-radius: 6px; font-size: 0.8em; border: 1px solid #33343a; }
+.control-box input { width: 70px; }
+
+.decks-container { display: flex; gap: 20px; align-items: center; margin-bottom: 25px; }
+
+.deck {
+  flex: 1;
+  background: #1e1f23;
+  padding: 15px;
+  border-radius: 8px;
+  border: 2px dashed #33343a;
+  text-align: center;
+  position: relative;
+}
+
+.drop-hint {
+  font-size: 0.75em;
+  color: #888;
+  text-transform: uppercase;
+  margin-bottom: 5px;
+}
+
+/* Titre en lecture : TON ROUGE #ED2607 */
+.track-info {
+  font-size: 0.9em;
+  font-weight: bold;
+  color: #ED2607;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 8px 0;
+}
+
+/* Titre en attente : TON VERT #12E532 */
+.track-info.standby {
+  color: #12E532;
+  font-style: italic;
+  font-weight: normal;
+}
+
+.time-display { font-family: monospace; font-size: 1.1em; color: #D9BE0F; margin-bottom: 8px; }
+
+.seek-bar { width: 100%; margin-bottom: 12px; accent-color: #ffaa00; cursor: pointer; }
+
+.vu-meter { background: #111; height: 8px; border-radius: 4px; overflow: hidden; }
+.vu-bar { background: #00ffcc; height: 100%; width: 0%; }
+
+/* Console centrale & Logo */
+.crossfader-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 180px;
+}
+
+.crossfader-logo {
+  max-width: 150px;
+  height: auto;
+  object-fit: contain;
+  margin-bottom: 10px;
+}
+
+input[type=range] { accent-color: #D9BE0F; }
+
+/* Playlist */
+.playlist-section { background: #1e1f23; padding: 15px; border-radius: 8px; border: 1px solid #33343a; }
+.playlist-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.playlist-header h3 { font-size: 0.95em; color: #aaa; }
+
+#playlist { list-style: none; max-height: 220px; overflow-y: auto; }
+
+#playlist li {
+  padding: 8px 12px;
+  background: #25262c;
+  margin-bottom: 6px;
+  border-radius: 4px;
+  font-size: 0.85em;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border: 1px solid #33343a;
+  user-select: none;
+}
+
+#playlist li.active { color: #D9BE0F; font-weight: bold; border-left: 4px solid #D9BE0F; background: #2a313d; }
+
+.track-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: 10px; }
+
+.btn-delete { background: transparent; border: none; color: #888; font-size: 1em; cursor: pointer; }
+.btn-delete:hover { color: #ff4747; }

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mixeur mp3</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="manifest" href="manifest.json">
+
+  <!-- Icônes -->
+  <link rel="icon" type="image/png" sizes="32x32" href="logo-192.png">
+  <link rel="apple-touch-icon" href="logo-192.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="logo-192.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="logo-512.png">
+</head>
+<body>
+
+  <div class="mixer-board">
+    <!-- Image Titre (Guillemet corrigé ici) -->
+    <img src="https://github.com/gasnier-coder/mixeur-mp3/blob/main/TABLE%20DE%20MIXAGE%20ROUGE%20ET%20VERT.png?raw=true" alt="Titre visuel" class="title-image">
+
+    <!-- CONTROLES DU HAUT -->
+    <div class="top-controls">
+      <label class="btn-import">
+        📁 Importer Fichiers
+        <input type="file" id="audio-input" multiple accept="audio/*">
+      </label>
+
+      <label class="btn-import">
+        📂 Importer Dossier
+        <input type="file" id="folder-input" webkitdirectory directory multiple>
+      </label>
+
+      <button id="btn-play-all" class="btn-primary" disabled>▶ Démarrer</button>
+      <button id="btn-pause" class="btn-secondary" disabled>❚❚ Pause</button>
+
+      <div class="control-box">
+        <label for="fade-time">Fondu : <span id="fade-value">8</span>s</label>
+        <input type="range" id="fade-time" min="2" max="20" value="8">
+      </div>
+
+      <div class="control-box">
+        <label for="master-volume">Volume : <span id="volume-value">100</span>%</label>
+        <input type="range" id="master-volume" min="0" max="1" step="0.01" value="1">
+      </div>
+    </div>
+
+    <!-- PLATINES & LOGO CENTRAL -->
+    <div class="decks-container">
+
+      <!-- Platine A -->
+      <div class="deck drop-zone" data-deck="0">
+        <div class="drop-hint">GLISSER POUR JOUER JUSTE APRÈS</div>
+        <div id="title-a" class="track-info">Aucun morceau</div>
+        <div id="time-a" class="time-display">-00:00 / 00:00</div>
+        <input type="range" id="seek-a" class="seek-bar" value="0" min="0" step="0.1" disabled>
+        <div class="vu-meter"><div id="vu-a" class="vu-bar"></div></div>
+      </div>
+
+      <!-- Console centrale -->
+      <div class="center-console crossfader-container">
+        <img src="https://github.com/gasnier-coder/Tirage-Bingo/blob/main/logo2.gif?raw=true" alt="Gasnier Tech" class="crossfader-logo">
+        <input type="range" id="crossfader" min="0" max="1" step="0.01" value="0.5">
+      </div>
+
+      <!-- Platine B -->
+      <div class="deck drop-zone" data-deck="1">
+        <div class="drop-hint">GLISSER POUR JOUER JUSTE APRÈS</div>
+        <div id="title-b" class="track-info">Aucun morceau</div>
+        <div id="time-b" class="time-display">-00:00 / 00:00</div>
+        <input type="range" id="seek-b" class="seek-bar" value="0" min="0" step="0.1" disabled>
+        <div class="vu-meter"><div id="vu-b" class="vu-bar"></div></div>
+      </div>
+
+    </div>
+
+    <!-- File d'attente -->
+    <div class="playlist-section">
+      <div class="playlist-header">
+        <h3>File d'attente (Glissez vers le haut/bas pour réordonner)</h3>
+        <button id="btn-clear-playlist" class="btn-danger">🗑 Vider la liste</button>
+      </div>
+      <ul id="playlist"></ul>
+    </div>
+
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
