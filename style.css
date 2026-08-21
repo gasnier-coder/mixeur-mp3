@@ -183,7 +183,7 @@ input[type=range] { accent-color: #D9BE0F; }
 }
 
 .crossfader-logo {
-  max-width: 200px !important; /* Empeche le logo d'exploser sur tout l'ecran */
+  max-width: 20px !important; /* Empeche le logo d'exploser sur tout l'ecran */
   height: auto !important;
   display: block !important;
   object-fit: contain !important;
