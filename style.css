@@ -159,7 +159,7 @@ input[type=range] { accent-color: #D9BE0F; }
 
 /* Taille et rendu du logo central */
 .crossfader-logo {
-  width: 900px;         /* Ajuste la largeur (ex: 80px, 90px ou 100px) selon tes préférences */
+  width: 90px;         /* Ajuste la largeur (ex: 80px, 90px ou 100px) selon tes préférences */
   height: auto;
   object-fit: contain;
   margin-bottom: 10px;
