@@ -10,7 +10,7 @@ let pauseOffset = 0;
 let isUserSeeking = false;
 
 let draggedItemIndex = null;
-
+const btnShuffle = document.getElementById('btn-shuffle');
 const inputFiles = document.getElementById('audio-input');
 const inputFolder = document.getElementById('folder-input'); // NOUVEAU BOUTON DOSSIER
 const btnPlay = document.getElementById('btn-play-all');
@@ -121,7 +121,32 @@ btnClear.addEventListener('click', () => {
   btnPlay.disabled = true;
   btnPause.disabled = true;
 });
+btnShuffle.addEventListener('click', () => {
+  if (playlist.length <= 1) return;
 
+  // Si un morceau est en cours de lecture, on conserve le premier (index 0) et on mélange le reste
+  if (isPlaying) {
+    const currentTrack = playlist[0];
+    const remainingTracks = playlist.slice(1);
+    
+    // Mélange de Fisher-Yates sur le reste de la liste
+    for (let i = remainingTracks.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [remainingTracks[i], remainingTracks[j]] = [remainingTracks[j], remainingTracks[i]];
+    }
+    
+    playlist = [currentTrack, ...remainingTracks];
+  } else {
+    // Si la lecture est arrêtée, on mélange toute la liste
+    for (let i = playlist.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [playlist[i], playlist[j]] = [playlist[j], playlist[i]];
+    }
+  }
+
+  updatePlaylistUI();
+  updateStandbyDeckDisplay();
+});
 function stopAllDecks() {
   decks.forEach(deck => {
     if (deck.source) { try { deck.source.stop(); } catch(e){} }

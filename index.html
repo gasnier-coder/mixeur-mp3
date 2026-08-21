@@ -18,7 +18,10 @@
   <div class="mixer-board">
    <img src="https://github.com/gasnier-coder/mixeur-mp3/blob/main/TABLE%20DE%20MIXAGE%20ROUGE%20ET%20VERT.png?raw=true" alt="Titre visuel" class="title-image">
 
+
+
     <!-- HAUT DE PAGE STRICTEMENT CONFORME À TON CSS -->
+	
     <div class="top-controls">
       <label class="btn-import">
         📁 Importer MP3
@@ -75,14 +78,17 @@
     </div>
 
     <!-- File d'attente -->
+<!-- File d'attente -->
     <div class="playlist-section">
       <div class="playlist-header">
         <h3>File d'attente (Glissez vers le haut/bas pour réordonner)</h3>
-        <button id="btn-clear-playlist" class="btn-danger">🗑 Vider la liste</button>
+        <div>
+          <button id="btn-shuffle" class="btn-secondary">🔀 Aléatoire</button>
+          <button id="btn-clear-playlist" class="btn-danger">🗑 Vider la liste</button>
+        </div>
       </div>
       <ul id="playlist"></ul>
     </div>
-
   </div>
 
   <script src="app.js"></script>
