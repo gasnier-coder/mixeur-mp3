@@ -1,0 +1,31 @@
+{
+  "name": "GASNIER TECH - MIXEUR MP3",
+  "short_name": "GASNIER TECH",
+  "description": "Mixeur MP3 double platine avec fondu auto 14s, auto-delete et logo rond full",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#06080a",
+  "theme_color": "#ff0a1a",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "logo2.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

@@ -1,96 +1,222 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MIXEUR MP3</title>
-  <link rel="stylesheet" href="style.css">
-  <link rel="manifest" href="manifest.json">
-
-  <!-- Icônes -->
-  <link rel="icon" type="image/png" sizes="32x32" href="logo-192.png">
-  <link rel="apple-touch-icon" href="logo-192.png">
-  <link rel="icon" type="image/png" sizes="192x192" href="logo-192.png">
-  <link rel="icon" type="image/png" sizes="512x512" href="logo-512.png">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GASNIER TECH - MIXEUR MP3</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Rajdhani:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;background:#06080a;color:#fff;font-family:'Rajdhani',sans-serif}
+::-webkit-scrollbar{width:7px;height:7px}::-webkit-scrollbar-thumb{background:#ffffff1e;border-radius:10px}
+@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+.deck-wrap{position:relative;width:100%;max-width:280px;margin:0 auto;transition:.2s}
+.deck-wrap.drag-over{transform:scale(1.04)}
+.deck-glow{position:absolute;inset:-8%;border-radius:50%;filter:blur(18px)}
+.deck{position:relative;width:100%;aspect-ratio:1;border-radius:50%;background:#0a0a0a;border:1px solid rgba(255,255,255,.12);box-shadow:inset 0 0 40px #000, 0 0 0 6px #000, 0 10px 30px rgba(0,0,0,.8);overflow:hidden}
+.deck-disc{position:absolute;inset:3%;border-radius:50%;overflow:hidden}
+.deck-disc-inner{position:absolute;inset:0;border-radius:50%;background:repeating-radial-gradient(circle at center,#0e0e0e 0px,#0e0e0e 2px,#161616 3px,#0e0e0e 4.5px)}
+.deck.playing .deck-disc{animation:spin 2.2s linear infinite}
+.deck .shine{position:absolute;inset:0;border-radius:50%;background:linear-gradient(115deg, transparent 30%, rgba(255,255,255,.12) 50%, transparent 70%)}
+.label-center{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:38%;height:38%;border-radius:50%;display:grid;place-items:center;z-index:3;box-shadow:0 0 0 4px #000}
+.dotted{position:absolute;inset:-3%;width:106%;height:106%;pointer-events:none}
+.gain-bar{position:absolute;left:50%;transform:translateX(-50%);bottom:-12px;display:flex;gap:4px;align-items:center}
+.gain-track{height:4px;width:52px;border-radius:10px;background:rgba(255,255,255,.12);overflow:hidden}
+.gain-fill{height:100%;transition:width .2s}
+.progress-wrap{height:18px;background:rgba(255,255,255,.08);border-radius:20px;position:relative;cursor:pointer;border:1px solid rgba(255,255,255,.08);overflow:hidden}
+.progress-fill{height:100%;background:linear-gradient(90deg,#ff0a1a,#ff6a3a 40%,#00ff88 100%)}
+.btn{border:none;cursor:pointer;font-family:Rajdhani;font-weight:800;transition:.2s}
+.btn:active{transform:scale(.96)}
+html.is-fullscreen{overflow:hidden}
+html.is-fullscreen body{overflow:hidden}
+html.is-fullscreen #app{position:fixed !important;inset:0 !important;width:100vw !important;height:100vh !important;height:100dvh !important;z-index:2147483647 !important;background:#06080a !important;overflow:auto !important}
+#rem-time{font-variant-numeric:tabular-nums; min-width:115px; text-align:center; display:inline-block; padding:2px 12px !important; letter-spacing:0.03em;}
+/* LOGO ROND CENTRE - VERSION FULL */
+.center-logo-wrap{width:176px;height:176px;border-radius:50%;border:3px solid #ff0a1a;background:#000;overflow:hidden;display:grid;place-items:center;box-shadow:0 0 22px rgba(255,10,26,.45), inset 0 0 20px rgba(0,0,0,.8);position:relative;transition:.3s}
+.center-logo-wrap:hover{transform:scale(1.03); box-shadow:0 0 30px rgba(255,10,26,.6)}
+.center-logo-wrap img{width:100%;height:100%;object-fit:cover;display:block; border-radius:50%;}
+</style>
 </head>
 <body>
-
-  <div class="mixer-board">
-   <img src="https://github.com/gasnier-coder/mixeur-mp3/blob/main/TABLE%20DE%20MIXAGE%20ROUGE%20ET%20VERT.png?raw=true" alt="Titre visuel" class="title-image">
-
-
-
-    <!-- HAUT DE PAGE STRICTEMENT CONFORME À TON CSS -->
-	
-    <div class="top-controls">
-      <label class="btn-import">
-        📁 Importer MP3
-        <input type="file" id="audio-input" multiple accept="audio/*">
-      </label>
-
-      <!-- NOUVEAU BOUTON AJOUTÉ : IMPORTER DOSSIER -->
-      <label class="btn-import">
-        📂 Importer Dossier
-        <input type="file" id="folder-input" webkitdirectory directory multiple>
-      </label>
-
-      <button id="btn-play-all" class="btn-primary" disabled>▶ Démarrer</button>
-      <button id="btn-pause" class="btn-secondary" disabled>❚❚ Pause</button>
-
-      <div class="control-box">
-        <label for="fade-time">Fondu : <span id="fade-value">10</span>s</label>
-        <input type="range" id="fade-time" min="2" max="20" value="4">
+<div id="app"></div>
+<script>
+let tracks=[], currentIdx=0, isPlaying=false, isCrossfading=false, crossfade=14, shuffle=false, pseudoFS=false;
+let audioA=new Audio(), audioB=new Audio(), activeDeck='A', currentTime=0, duration=0;
+let ctx,gainA,gainB,master,srcA,srcB,raf,progressDragging=false;
+audioA.preload='auto'; audioB.preload='auto';
+function fmt(s){ if(!s||isNaN(s)) return '00:00'; const m=Math.floor(s/60), sec=Math.floor(s%60); return `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`}
+function fmtRem(s){ if(!s||isNaN(s)) return '  -00:00  '; const m=Math.floor(s/60), sec=Math.floor(s%60); return `  -${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}  ` }
+function initAudio(){
+  if(ctx) return;
+  ctx=new (window.AudioContext||window.webkitAudioContext)();
+  master=ctx.createGain(); gainA=ctx.createGain(); gainB=ctx.createGain();
+  master.gain.value=0.95; gainA.connect(master); gainB.connect(master); master.connect(ctx.destination);
+  try{ srcA=ctx.createMediaElementSource(audioA); srcA.connect(gainA);}catch{}
+  try{ srcB=ctx.createMediaElementSource(audioB); srcB.connect(gainB);}catch{}
+  gainA.gain.value=1; gainB.gain.value=0; audioA.volume=1; audioB.volume=0;
+}
+function getActiveAudio(){return activeDeck==='A'?audioA:audioB}
+async function loadToDeck(idx,deck){ if(!tracks[idx]) return; const aud=deck==='A'?audioA:audioB; if(aud.src!==tracks[idx].url){ aud.src=tracks[idx].url; aud.load(); await new Promise(r=>{aud.onloadedmetadata=r; setTimeout(r,500);}); } }
+async function startPlayback(idx){ if(!tracks[idx]) return; currentIdx=idx; activeDeck='A'; initAudio(); if(ctx.state==='suspended') await ctx.resume(); audioB.pause(); audioB.currentTime=0; gainA.gain.value=1; gainB.gain.value=0; audioA.volume=1; audioB.volume=0; isCrossfading=false; await loadToDeck(idx,'A'); await audioA.play(); isPlaying=true; loop(); render(); }
+function nextManual(){
+  if(tracks.length===0) return;
+  const oldIdx = currentIdx;
+  let n=shuffle?Math.floor(Math.random()*tracks.length):currentIdx+1; 
+  if(n>=tracks.length) n=0; 
+  const oldTrack = tracks[oldIdx];
+  if(oldTrack){
+    try{ URL.revokeObjectURL(oldTrack.url); }catch{}
+    tracks.splice(oldIdx,1);
+    if(tracks.length===0){ isPlaying=false; getActiveAudio().pause(); currentIdx=0; render(); return; }
+    if(oldIdx < n) n--;
+    if(n>=tracks.length) n=0;
+  }
+  startPlayback(n);
+}
+function prevManual(){ let p=currentIdx-1; if(p<0) p=tracks.length-1; startPlayback(p); }
+async function doCrossfade(){
+  if(tracks.length<2 || isCrossfading) return;
+  const oldIdx = currentIdx;
+  const nextIdx=shuffle?Math.floor(Math.random()*tracks.length):(currentIdx+1)%tracks.length;
+  if(nextIdx===currentIdx) return;
+  isCrossfading=true; render();
+  const fromDeck=activeDeck, toDeck=fromDeck==='A'?'B':'A';
+  const fromAudio=fromDeck==='A'?audioA:audioB, toAudio=toDeck==='A'?audioA:audioB;
+  await loadToDeck(nextIdx,toDeck); toAudio.currentTime=0; try{await toAudio.play();}catch{}
+  const start=performance.now(), dur=crossfade*1000;
+  function step(now){
+    const p=Math.min((now-start)/dur,1);
+    const g1=Math.cos(p*Math.PI/2), g2=Math.cos((1-p)*Math.PI/2);
+    if(fromDeck==='A'){ gainA.gain.value=g1; gainB.gain.value=g2; audioA.volume=g1; audioB.volume=g2; } else { gainB.gain.value=g1; gainA.gain.value=g2; audioB.volume=g1; audioA.volume=g2; }
+    const cur=document.getElementById('xfade-cursor'); if(cur) cur.style.left=(fromDeck==='A'?p*100:100-p*100)+'%';
+    if(p<1) requestAnimationFrame(step);
+    else { 
+      fromAudio.pause(); fromAudio.currentTime=0; 
+      let newIdx = nextIdx;
+      const playedTrack = tracks[oldIdx];
+      if(playedTrack){
+        try{ URL.revokeObjectURL(playedTrack.url); }catch{}
+        tracks.splice(oldIdx,1);
+        if(oldIdx < newIdx) newIdx--;
+      }
+      if(tracks.length===0){ isPlaying=false; isCrossfading=false; currentIdx=0; render(); return; }
+      activeDeck=toDeck; currentIdx=newIdx; isCrossfading=false; 
+      if(activeDeck==='A'){gainA.gain.value=1;gainB.gain.value=0;audioA.volume=1;audioB.volume=0;}else{gainB.gain.value=1;gainA.gain.value=0;audioB.volume=1;audioA.volume=0;} 
+      render(); loop(); 
+    }
+  }
+  requestAnimationFrame(step);
+}
+function loop(){ cancelAnimationFrame(raf); function tick(){ const a=getActiveAudio(); if(a && a.duration){ currentTime=a.currentTime; duration=a.duration; if(!progressDragging) updProg(); if(!isCrossfading && a.duration-a.currentTime<=crossfade && a.duration>crossfade+1 && tracks.length>1) doCrossfade(); if(a.ended && !isCrossfading) nextManual(); } raf=requestAnimationFrame(tick); } tick(); }
+function updProg(){ const fill=document.getElementById('prog-fill'), cur=document.getElementById('cur-time'), durEl=document.getElementById('dur-time'), remEl=document.getElementById('rem-time'), range=document.getElementById('prog-range'); const pct=duration?currentTime/duration*100:0; if(fill) fill.style.width=pct+'%'; if(cur) cur.textContent=fmt(currentTime); if(durEl) durEl.textContent=fmt(duration); if(remEl) remEl.textContent=fmtRem(Math.max(0,(duration||0)-currentTime)); if(range && !progressDragging){ range.value=currentTime; range.max=duration||100; } }
+function handleFiles(list){ [...list].forEach(f=>{ const url=URL.createObjectURL(f); const id=Math.random().toString(36).slice(2); const title=f.name.replace(/\.[^/.]+$/,''); const initial=title.trim()[0]?.toUpperCase()||'#'; const tr={id,file:f,url,title,duration:0,initial}; const tmp=new Audio(); tmp.src=url; tmp.onloadedmetadata=()=>{tr.duration=tmp.duration; render();}; tracks.push(tr); }); render(); }
+function vinylHTML(track, deck, isActiveDeck, isSpinning, gain){
+  const hue=deck==='A'?'#ff0a1a':'#00ff88';
+  const label=track?track.initial:deck;
+  return `<div class="deck-wrap" id="wrap${deck}"><div class="deck-glow" style="background:radial-gradient(circle, ${hue}33 0%, transparent 70%); opacity:${isActiveDeck?0.65:0.18}"></div><div id="deck${deck}" class="deck ${isSpinning?'playing':''}" data-deck="${deck}" style="border-color:${isActiveDeck?hue:'rgba(255,255,255,.14)'}"><div class="deck-disc"><div class="deck-disc-inner"></div><div class="shine"></div></div><div class="label-center" style="background:radial-gradient(circle at 35% 35%, #1a1a1a 0%, #0a0a0a 60%, #000 100%); border:1.5px solid ${hue}; box-shadow:0 0 0 3px #000, 0 0 14px ${hue}66"><div style="display:flex;flex-direction:column;align-items:center"><span style="font-family:Orbitron;font-weight:900;font-size:24px;color:${hue};text-shadow:0 0 10px ${hue}">${label}</span><span style="font-size:6px;letter-spacing:.25em;color:rgba(255,255,255,.4);font-family:monospace">${deck} • 33⅓</span></div></div><svg class="dotted" viewBox="0 0 100 100"><circle cx="50" cy="50" r="49" fill="none" stroke="${hue}" stroke-width="${isActiveDeck && isSpinning?0.7:0.28}" stroke-dasharray="${isActiveDeck && isSpinning?'2 4':'1 8'}" opacity="${isActiveDeck?0.62:0.18}" style="${isActiveDeck && isSpinning?'animation:spin 6s linear infinite; transform-origin:50% 50%':''}"></circle></svg>${!isActiveDeck?`<div style="position:absolute;inset:0;border-radius:50%;background:rgba(0,0,0,.38);display:grid;place-items:center;z-index:4"><div style="font-family:Orbitron;font-size:9px;color:rgba(255,255,255,.75);background:rgba(0,0,0,.65);padding:3px 8px;border-radius:20px;border:1px solid rgba(255,255,255,.15)">DROP = ATTENTE</div></div>`:''}</div><div class="gain-bar"><div class="gain-track"><div class="gain-fill" style="width:${(gain||0)*100}%; background:linear-gradient(90deg, ${hue}, #fff); box-shadow:0 0 8px ${hue}"></div></div><span style="font-size:7px;font-family:monospace;color:rgba(255,255,255,.35)">${deck}</span></div></div><div style="margin-top:18px;text-align:center;min-height:46px"><div style="font-family:Rajdhani;font-weight:800;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px;margin:0 auto;color:${isActiveDeck?'#fff':'rgba(255,255,255,.65)'}" title="${track?track.title:''}">${track?track.title:(deck==='A'?'Aucune piste':'En attente')}</div><div style="font-family:monospace;font-size:11px;margin-top:3px;color:${isActiveDeck?(deck==='A'?'#ff6a6a':'#7affc0'):'rgba(255,255,255,.45)'}">${isActiveDeck? (isCrossfading?(deck===activeDeck?'FADING OUT':'FADING IN'):(isSpinning?'▶ LECTURE':'■ STOP')) : '▶ PROCHAIN FONDU'}</div></div>`;
+}
+function toggleFS(){ pseudoFS=!pseudoFS; document.documentElement.classList.toggle('is-fullscreen', pseudoFS); try{ if(pseudoFS){ const el=document.documentElement; if(el.requestFullscreen) el.requestFullscreen().catch(()=>{}); else if(el.webkitRequestFullscreen) el.webkitRequestFullscreen(); } else { if(document.fullscreenElement||document.webkitFullscreenElement){ if(document.exitFullscreen) document.exitFullscreen().catch(()=>{}); else if(document.webkitExitFullscreen) document.webkitExitFullscreen(); } } }catch(e){} render(); }
+window.toggleFS=toggleFS;
+function render(){
+  const root=document.getElementById('app');
+  const cur=tracks[currentIdx];
+  const nxt=tracks[(currentIdx+1)%tracks.length];
+  const trackOnA = activeDeck==='A' ? cur : nxt;
+  const trackOnB = activeDeck==='B' ? cur : nxt;
+  const isActiveA = activeDeck==='A';
+  const isActiveB = activeDeck==='B';
+  const spinningA = (isActiveA && isPlaying) || isCrossfading;
+  const spinningB = (isActiveB && isPlaying) || isCrossfading;
+  const gainAVal = gainA?gainA.gain.value:audioA.volume;
+  const gainBVal = gainB?gainB.gain.value:audioB.volume;
+  const isFS = pseudoFS || !!document.fullscreenElement || !!document.webkitFullscreenElement;
+  root.innerHTML=`
+  <div style="min-height:100vh;display:flex;flex-direction:column;background:radial-gradient(900px 500px at 15% -10%, rgba(255,10,26,.18), transparent), radial-gradient(800px 400px at 85% -15%, rgba(0,255,136,.16), transparent), #06080a">
+    <header style="display:flex;align-items:center;justify-content:space-between;padding:8px 14px;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(0,0,0,.5);backdrop-filter:blur(12px);position:sticky;top:0;z-index:20">
+      <div style="display:flex;align-items:center;min-width:200px;min-height:52px">
+        <img id="customLogo" src="logo.png" alt="LOGO" style="max-height:52px; max-width:320px; width:auto; height:auto; object-fit:contain; display:block;" onerror="this.style.display='none'; document.getElementById('logoPlaceholder').style.display='flex';">
+        <div id="logoPlaceholder" style="display:none; width:320px; height:52px; border:1.5px dashed rgba(255,255,255,.2); border-radius:10px; align-items:center; justify-content:center; background:rgba(255,255,255,.03);"><span style="font-family:Orbitron;font-size:10px;letter-spacing:.15em;color:rgba(255,255,255,.35)">TON LOGO ICI - logo.png</span></div>
       </div>
-
-      <div class="control-box">
-        <label for="master-volume">Volume : <span id="volume-value">100</span>%</label>
-        <input type="range" id="master-volume" min="0" max="1" step="0.01" value="1">
+      <div style="display:flex;gap:8px;align-items:center">
+        <button id="fsBtn" class="btn" onclick="toggleFS()" style="padding:8px 16px;border-radius:20px;border:2px solid ${isFS?'#00ff88':'#ff0a1a'};background:${isFS?'rgba(0,255,136,.25)':'rgba(255,10,26,.18)'};color:${isFS?'#7affc0':'#ff8a8a'};font-size:12px;letter-spacing:.06em;box-shadow:0 0 16px ${isFS?'rgba(0,255,136,.4)':'rgba(255,10,26,.25)'}">${isFS?'✕ QUITTER (F)':'⛶ PLEIN ÉCRAN (F)'}</button>
+        <label style="display:flex;align-items:center;gap:6px;font-size:10px;font-family:monospace;color:#00ff88;background:rgba(0,255,136,.08);border:1px solid rgba(0,255,136,.2);padding:4px 10px;border-radius:20px">X-FADE <input id="xf" type="range" min="2" max="30" value="${crossfade}" style="width:80px;accent-color:#00ff88"> <b>${crossfade}s</b></label>
       </div>
-    </div>
-
-    <!-- PLATINES & LOGO CENTRAL AU-DESSUS DU CROSSFADER -->
-    <div class="decks-container">
-
-      <!-- Platine A -->
-      <div class="deck drop-zone" data-deck="0">
-        <div class="drop-hint">GLISSER POUR JOUER JUSTE APRÈS</div>
-        <div id="title-a" class="track-info">Aucun morceau</div>
-        <div id="time-a" class="time-display">-00:00 / 00:00</div>
-        <input type="range" id="seek-a" class="seek-bar" value="0" min="0" step="0.1" disabled>
-        <div class="vu-meter"><div id="vu-a" class="vu-bar"></div></div>
-      </div>
-
-      <!-- Console centrale (Logo + Crossfader) -->
-      <div class="center-console crossfader-container">
-        <img src="https://github.com/gasnier-coder/Tirage-Bingo/blob/main/logo2.gif?raw=true" alt="Gasnier Tech" class="crossfader-logo">
-        <input type="range" id="crossfader" min="0" max="1" step="0.01" value="0.5">
-      </div>
-
-      <!-- Platine B -->
-      <div class="deck drop-zone" data-deck="1">
-        <div class="drop-hint">GLISSER POUR JOUER JUSTE APRÈS</div>
-        <div id="title-b" class="track-info">Aucun morceau</div>
-        <div id="time-b" class="time-display">-00:00 / 00:00</div>
-        <input type="range" id="seek-b" class="seek-bar" value="0" min="0" step="0.1" disabled>
-        <div class="vu-meter"><div id="vu-b" class="vu-bar"></div></div>
-      </div>
-
-    </div>
-
-    <!-- File d'attente -->
-<!-- File d'attente -->
-    <div class="playlist-section">
-      <div class="playlist-header">
-        <h3>File d'attente (Glissez vers le haut/bas pour réordonner)</h3>
-        <div>
-          <button id="btn-shuffle" class="btn-secondary">🔀 Aléatoire</button>
-          <button id="btn-clear-playlist" class="btn-danger">🗑 Vider la liste</button>
+    </header>
+    <div style="background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(0,0,0,.4));border-bottom:1px solid rgba(255,255,255,.08);padding:12px 14px;display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span id="cur-time" style="font-family:Orbitron;font-weight:900;font-size:17px; min-width:72px; text-align:center; font-variant-numeric:tabular-nums;">${fmt(currentTime)}</span>
+          <span style="font-family:monospace;color:rgba(255,255,255,.35)">/</span>
+          <span id="dur-time" style="font-family:Orbitron;font-weight:700;font-size:17px;color:rgba(255,255,255,.6); min-width:62px; text-align:center; font-variant-numeric:tabular-nums;">${fmt(duration)}</span>
+          <span style="width:1px;height:18px;background:rgba(255,255,255,.12)"></span>
+          <span id="rem-time">${fmtRem(Math.max(0,(duration||0)-currentTime))}</span>
+          <span style="font-family:monospace;font-size:9px;color:rgba(255,255,255,.35)">RESTANT</span>
         </div>
+        <div style="flex:1;max-width:520px;text-align:center;overflow:hidden"><div style="font-family:Rajdhani;font-weight:800;font-size:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${cur?cur.title:'Aucune piste'}</div><div style="font-family:monospace;font-size:12px;color:rgba(255,255,255,.5)">▶ DECK ${activeDeck} • ${isCrossfading?'MÉLANGE '+crossfade+'s':isPlaying?'LECTURE':'PAUSE'} ${nxt && cur ? `• SUIVANT: ${nxt.title}`:''} • ${tracks.length} RESTANTS</div></div>
+        <div style="display:flex;gap:8px"><button id="m10" class="btn" style="padding:7px 12px;border-radius:10px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);color:#fff">-10s</button><button id="p10" class="btn" style="padding:7px 12px;border-radius:10px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);color:#fff">+10s</button></div>
       </div>
-      <ul id="playlist"></ul>
+      <div id="prog-wrap" class="progress-wrap"><div id="prog-fill" class="progress-fill" style="width:${duration?currentTime/duration*100:0}%"></div><input id="prog-range" type="range" min="0" max="${duration||100}" value="${currentTime}" step="0.1" style="position:absolute;inset:0;width:100%;opacity:0;cursor:pointer"></div>
     </div>
-  </div>
+    <main style="flex:1;max-width:1440px;margin:0 auto;width:100%;padding:14px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:grid;grid-template-columns:1fr 190px 1fr;gap:14px;align-items:start;background:rgba(10,14,18,.55);border:1px solid rgba(255,255,255,.07);border-radius:18px;padding:18px 14px">
+        <div>${vinylHTML(trackOnA,'A', isActiveA, spinningA, gainAVal)}</div>
+        <div style="display:flex;flex-direction:column;gap:12px;align-items:center;padding-top:24px">
+          <div style="width:100%;height:6px;background:rgba(255,255,255,.08);border-radius:10px;position:relative;overflow:hidden"><div id="xfade-cursor" style="position:absolute;top:-2px;bottom:-2px;width:4px;background:#fff;box-shadow:0 0 12px #fff;border-radius:10px;left:${activeDeck==='A'?'0%':'100%'};transition:left ${isCrossfading?crossfade:0.3}s linear"></div></div>
+          <div style="display:flex;gap:8px"><button id="prev" class="btn" style="width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:#fff">⏮</button><button id="play" class="btn" style="width:60px;height:60px;border-radius:50%;background:#fff;color:#000;font-size:22px;font-weight:900"> ${isPlaying?'II':'▶'} </button><button id="next" class="btn" style="width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:#fff">⏭</button></div>
+          <div style="font-family:Orbitron;font-size:9px;color:rgba(255,255,255,.4);text-align:center">DECK ${activeDeck} ACTIF • AUTO-DELETE ON</div>
+          
+          <!-- LOGO ROND FULL - REMPLIT TOUT LE CERCLE -->
+          <div style="margin-top:18px; display:flex; flex-direction:column; align-items:center; gap:8px;">
+            <div class="center-logo-wrap" id="centerLogoWrap">
+              <img id="centerLogo" src="logo2.png" alt="GT GASNIER TECH" onerror="this.style.display='none'; document.getElementById('centerPlaceholder').style.display='flex';">
+              <div id="centerPlaceholder" style="display:none; width:100%; height:100%; border-radius:50%; border:2px dashed rgba(255,255,255,.18); align-items:center; justify-content:center; flex-direction:column; gap:4px; background:rgba(255,255,255,.02);">
+                <span style="font-family:Orbitron;font-size:9px; color:rgba(255,255,255,.35); text-align:center; line-height:1.2">ESPACE VIDE<br>ROND<br>logo.png</span>
+              </div>
+            </div>
+            <div style="font-family:monospace; font-size:8px; color:rgba(255,255,255,.25); letter-spacing:.1em"></div>
+          </div>
 
-  <script src="app.js"></script>
+        </div>
+        <div>${vinylHTML(trackOnB,'B', isActiveB, spinningB, gainBVal)}</div>
+      </div>
+      <div style="display:grid;grid-template-columns:320px 1fr;gap:12px"><div id="drop" style="border:2px dashed rgba(255,255,255,.14);border-radius:14px;padding:14px;background:rgba(10,14,18,.6);cursor:pointer"><div style="font-weight:800">Importer MP3</div><div style="font-family:monospace;font-size:11px;color:rgba(255,255,255,.45)">Glisse-dépose. Titre${crossfade}s. Titres joués = supprimés auto</div><label style="margin-top:8px;display:inline-block;padding:6px 14px;background:#fff;color:#000;border-radius:20px;font-size:11px;font-weight:900;cursor:pointer">PARCOURIR <input id="file" type="file" multiple accept="audio/*" style="display:none"></label><div style="margin-top:8px;font-family:monospace;font-size:10px;color:rgba(255,255,255,.35)">${tracks.length} TRACKS RESTANTS</div></div><div style="background:rgba(10,14,18,.75);border:1px solid rgba(255,255,255,.08);border-radius:14px;overflow:hidden;max-height:260px;display:flex;flex-direction:column"><div style="padding:8px 12px;border-bottom:1px solid rgba(255,255,255,.07);font-family:monospace;font-size:10px;color:rgba(255,255,255,.45)">Paylist : les titres joués disparaissent</div><div style="overflow:auto;flex:1">${tracks.length===0?`<div style="padding:20px;text-align:center;font-family:monospace;font-size:11px;color:rgba(255,255,255,.35)">EMPTY - tous les titres ont été joués !</div>`: tracks.map((t,i)=>`<div class="row" data-i="${i}" draggable="true" style="display:flex;gap:10px;align-items:center;padding:9px 12px;border-bottom:1px solid rgba(255,255,255,.05);cursor:grab;background:${i===currentIdx?'rgba(255,10,26,.08)':'transparent'}"><div style="width:20px;height:20px;border-radius:50%;border:1px solid rgba(255,255,255,.12);display:grid;place-items:center;font-size:10px">${i+1}</div><div style="flex:1;font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t.title}</div><button class="del" data-id="${t.id}" style="width:22px;height:22px;border-radius:50%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:#fff">✕</button></div>`).join('')}</div></div></div>
+    </main>
+  </div>`;
+  document.getElementById('fsBtn').onclick=toggleFS;
+  document.getElementById('xf').oninput=e=>{ crossfade=parseInt(e.target.value); render(); };
+  document.getElementById('play').onclick=async()=>{ initAudio(); if(ctx.state==='suspended') await ctx.resume(); if(!tracks.length) return; if(isPlaying){ getActiveAudio().pause(); isPlaying=false; cancelAnimationFrame(raf); } else { if(!getActiveAudio().src) await loadToDeck(currentIdx, activeDeck); await getActiveAudio().play(); isPlaying=true; loop(); } render(); };
+  document.getElementById('prev').onclick=prevManual; document.getElementById('next').onclick=nextManual;
+  document.getElementById('m10').onclick=()=>{ const a=getActiveAudio(); a.currentTime=Math.max(0,a.currentTime-10); };
+  document.getElementById('p10').onclick=()=>{ const a=getActiveAudio(); a.currentTime=Math.min(a.duration||Infinity,a.currentTime+10); };
+  document.getElementById('file').onchange=e=> handleFiles(e.target.files);
+  const drop=document.getElementById('drop'); drop.ondragover=e=>{ e.preventDefault(); drop.style.borderColor='#00ff88'; }; drop.ondragleave=()=> drop.style.borderColor='rgba(255,255,255,.14)'; drop.ondrop=e=>{ e.preventDefault(); drop.style.borderColor='rgba(255,255,255,.14)'; handleFiles(e.dataTransfer.files); }; drop.onclick=()=> document.getElementById('file').click();
+  document.querySelectorAll('.row').forEach(el=>{
+    el.ondragstart=ev=>{ ev.dataTransfer.setData('text/plain', el.dataset.i); ev.dataTransfer.setData('trackIdx', el.dataset.i); };
+    el.ondragover=ev=> ev.preventDefault();
+    el.ondrop=ev=>{ ev.preventDefault(); const from=parseInt(ev.dataTransfer.getData('text/plain')); const to=parseInt(el.dataset.i); if(!isNaN(from)&&from!==to){ const [m]=tracks.splice(from,1); tracks.splice(to,0,m); if(currentIdx===from) currentIdx=to; else if(from<currentIdx && to>=currentIdx) currentIdx--; else if(from>currentIdx && to<=currentIdx) currentIdx++; render(); } };
+    el.onclick=()=> startPlayback(parseInt(el.dataset.i));
+  });
+  document.querySelectorAll('.del').forEach(b=> b.onclick=ev=>{ ev.stopPropagation(); const idx=tracks.findIndex(t=>t.id===b.dataset.id); if(idx!==-1){ URL.revokeObjectURL(tracks[idx].url); tracks.splice(idx,1); if(idx===currentIdx){ isPlaying=false; getActiveAudio().pause(); } if(currentIdx>=tracks.length) currentIdx=Math.max(0,tracks.length-1); render(); } });
+  ['deckA','deckB'].forEach(id=>{
+    const deck=document.getElementById(id); if(!deck) return;
+    deck.ondragover=e=>{ e.preventDefault(); document.getElementById('wrap'+deck.dataset.deck)?.classList.add('drag-over'); };
+    deck.ondragleave=()=> document.getElementById('wrap'+deck.dataset.deck)?.classList.remove('drag-over');
+    deck.ondrop=e=>{
+      e.preventDefault(); document.getElementById('wrap'+deck.dataset.deck)?.classList.remove('drag-over');
+      const ti=parseInt(e.dataTransfer.getData('trackIdx')||e.dataTransfer.getData('text/plain'));
+      if(isNaN(ti)) return;
+      const targetDeck=deck.dataset.deck;
+      if(targetDeck===activeDeck){ startPlayback(ti); }
+      else { const [moved]=tracks.splice(ti,1); const ins=currentIdx+1; const finalPos=ins>tracks.length?tracks.length:ins; tracks.splice(finalPos,0,moved); loadToDeck(finalPos, targetDeck); render(); }
+    };
+  });
+  const range=document.getElementById('prog-range'), wrap=document.getElementById('prog-wrap');
+  if(range){ range.oninput=e=>{ progressDragging=true; const a=getActiveAudio(); const v=parseFloat(e.target.value); if(!isNaN(v)) a.currentTime=v; updProg(); }; range.onchange=()=> progressDragging=false; }
+  if(wrap){ wrap.onclick=e=>{ if(e.target.id==='prog-range') return; const rect=wrap.getBoundingClientRect(); const pct=(e.clientX-rect.left)/rect.width; const a=getActiveAudio(); if(a.duration) a.currentTime=pct*a.duration; }; }
+}
+render();
+document.addEventListener('keydown', e=>{ if(e.key.toLowerCase()==='f'){ toggleFS(); } if(e.key==='Escape' && pseudoFS){ toggleFS(); } });
+document.addEventListener('fullscreenchange', ()=>{ render(); });
+</script>
 </body>
 </html>
