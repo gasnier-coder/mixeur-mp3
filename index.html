@@ -31,11 +31,19 @@ html,body{margin:0;min-height:100%;background:#06080a;color:#fff;font-family:'Ra
 html.is-fullscreen{overflow:hidden}
 html.is-fullscreen body{overflow:hidden}
 html.is-fullscreen #app{position:fixed !important;inset:0 !important;width:100vw !important;height:100vh !important;height:100dvh !important;z-index:2147483647 !important;background:#06080a !important;overflow:auto !important}
-#rem-time{font-variant-numeric:tabular-nums; min-width:115px; text-align:center; display:inline-block; padding:2px 12px !important; letter-spacing:0.03em;}
+#rem-time{font-size:28px; font-variant-numeric:tabular-nums; min-width:115px; text-align:center; display:inline-block; padding:2px 12px !important; letter-spacing:0.03em;}
 /* LOGO ROND CENTRE - VERSION FULL */
 .center-logo-wrap{width:176px;height:176px;border-radius:50%;border:3px solid #ff0a1a;background:#000;overflow:hidden;display:grid;place-items:center;box-shadow:0 0 22px rgba(255,10,26,.45), inset 0 0 20px rgba(0,0,0,.8);position:relative;transition:.3s}
 .center-logo-wrap:hover{transform:scale(1.03); box-shadow:0 0 30px rgba(255,10,26,.6)}
 .center-logo-wrap img{width:100%;height:100%;object-fit:cover;display:block; border-radius:50%;}
+
+/* CROSSFADER MANUEL AMÉLIORÉ */
+.xfader-container { position: relative; width: 100%; height: 26px; display: flex; align-items: center; justify-content: center; }
+.xfader-track { position: absolute; width: 100%; height: 8px; background: #000; border: 1px solid rgba(255,255,255,.15); border-radius: 4px; box-shadow: inset 0 1px 3px rgba(0,0,0,.8); }
+.xfader-track-fill { position: absolute; height: 100%; border-radius: 4px; background: linear-gradient(90deg, #ff0a1a 0%, #00ff88 100%); opacity: 0.3; width: 100%; }
+.xfader-input { position: absolute; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 5; margin: 0; }
+.xfader-knob { position: absolute; width: 20px; height: 26px; background: linear-gradient(180deg, #e0e0e0 0%, #888 50%, #444 100%); border: 1px solid #fff; border-radius: 3px; box-shadow: 0 2px 6px rgba(0,0,0,.8), 0 0 8px rgba(255,255,255,.3); pointer-events: none; z-index: 4; transform: translateX(-50%); transition: left 0.1s ease-out; }
+.xfader-knob::after { content: ''; position: absolute; top: 3px; bottom: 3px; left: 50%; transform: translateX(-50%); width: 2px; background: #ff0a1a; box-shadow: 0 0 4px #ff0a1a; }
 </style>
 </head>
 <body>
@@ -44,9 +52,12 @@ html.is-fullscreen #app{position:fixed !important;inset:0 !important;width:100vw
 let tracks=[], currentIdx=0, isPlaying=false, isCrossfading=false, crossfade=14, shuffle=false, pseudoFS=false;
 let audioA=new Audio(), audioB=new Audio(), activeDeck='A', currentTime=0, duration=0;
 let ctx,gainA,gainB,master,srcA,srcB,raf,progressDragging=false;
+let manualXFadeVal=0; // 0 = Deck A, 100 = Deck B
 audioA.preload='auto'; audioB.preload='auto';
+
 function fmt(s){ if(!s||isNaN(s)) return '00:00'; const m=Math.floor(s/60), sec=Math.floor(s%60); return `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`}
 function fmtRem(s){ if(!s||isNaN(s)) return '  -00:00  '; const m=Math.floor(s/60), sec=Math.floor(s%60); return `  -${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}  ` }
+
 function initAudio(){
   if(ctx) return;
   ctx=new (window.AudioContext||window.webkitAudioContext)();
@@ -56,9 +67,13 @@ function initAudio(){
   try{ srcB=ctx.createMediaElementSource(audioB); srcB.connect(gainB);}catch{}
   gainA.gain.value=1; gainB.gain.value=0; audioA.volume=1; audioB.volume=0;
 }
+
 function getActiveAudio(){return activeDeck==='A'?audioA:audioB}
+
 async function loadToDeck(idx,deck){ if(!tracks[idx]) return; const aud=deck==='A'?audioA:audioB; if(aud.src!==tracks[idx].url){ aud.src=tracks[idx].url; aud.load(); await new Promise(r=>{aud.onloadedmetadata=r; setTimeout(r,500);}); } }
-async function startPlayback(idx){ if(!tracks[idx]) return; currentIdx=idx; activeDeck='A'; initAudio(); if(ctx.state==='suspended') await ctx.resume(); audioB.pause(); audioB.currentTime=0; gainA.gain.value=1; gainB.gain.value=0; audioA.volume=1; audioB.volume=0; isCrossfading=false; await loadToDeck(idx,'A'); await audioA.play(); isPlaying=true; loop(); render(); }
+
+async function startPlayback(idx){ if(!tracks[idx]) return; currentIdx=idx; activeDeck='A'; manualXFadeVal=0; initAudio(); if(ctx.state==='suspended') await ctx.resume(); audioB.pause(); audioB.currentTime=0; gainA.gain.value=1; gainB.gain.value=0; audioA.volume=1; audioB.volume=0; isCrossfading=false; await loadToDeck(idx,'A'); await audioA.play(); isPlaying=true; loop(); render(); }
+
 function nextManual(){
   if(tracks.length===0) return;
   const oldIdx = currentIdx;
@@ -74,7 +89,23 @@ function nextManual(){
   }
   startPlayback(n);
 }
+
 function prevManual(){ let p=currentIdx-1; if(p<0) p=tracks.length-1; startPlayback(p); }
+
+function updateManualCrossfade(val){
+  manualXFadeVal=val;
+  if(!ctx) return;
+  const p = val / 100; // 0 (Deck A) à 1 (Deck B)
+  const gA = Math.cos(p * Math.PI / 2);
+  const gB = Math.cos((1 - p) * Math.PI / 2);
+  gainA.gain.value = gA;
+  gainB.gain.value = gB;
+  audioA.volume = gA;
+  audioB.volume = gB;
+  const knob = document.getElementById('xfade-knob');
+  if(knob) knob.style.left = val + '%';
+}
+
 async function doCrossfade(){
   if(tracks.length<2 || isCrossfading) return;
   const oldIdx = currentIdx;
@@ -88,8 +119,10 @@ async function doCrossfade(){
   function step(now){
     const p=Math.min((now-start)/dur,1);
     const g1=Math.cos(p*Math.PI/2), g2=Math.cos((1-p)*Math.PI/2);
-    if(fromDeck==='A'){ gainA.gain.value=g1; gainB.gain.value=g2; audioA.volume=g1; audioB.volume=g2; } else { gainB.gain.value=g1; gainA.gain.value=g2; audioB.volume=g1; audioA.volume=g2; }
-    const cur=document.getElementById('xfade-cursor'); if(cur) cur.style.left=(fromDeck==='A'?p*100:100-p*100)+'%';
+    if(fromDeck==='A'){ gainA.gain.value=g1; gainB.gain.value=g2; audioA.volume=g1; audioB.volume=g2; manualXFadeVal=p*100; } 
+    else { gainB.gain.value=g1; gainA.gain.value=g2; audioB.volume=g1; audioA.volume=g2; manualXFadeVal=(1-p)*100; }
+    const knob=document.getElementById('xfade-knob'); if(knob) knob.style.left=manualXFadeVal+'%';
+    const slider=document.getElementById('xfade-slider'); if(slider) slider.value=manualXFadeVal;
     if(p<1) requestAnimationFrame(step);
     else { 
       fromAudio.pause(); fromAudio.currentTime=0; 
@@ -102,22 +135,53 @@ async function doCrossfade(){
       }
       if(tracks.length===0){ isPlaying=false; isCrossfading=false; currentIdx=0; render(); return; }
       activeDeck=toDeck; currentIdx=newIdx; isCrossfading=false; 
+      manualXFadeVal = activeDeck === 'A' ? 0 : 100;
       if(activeDeck==='A'){gainA.gain.value=1;gainB.gain.value=0;audioA.volume=1;audioB.volume=0;}else{gainB.gain.value=1;gainA.gain.value=0;audioB.volume=1;audioA.volume=0;} 
       render(); loop(); 
     }
   }
   requestAnimationFrame(step);
 }
+
 function loop(){ cancelAnimationFrame(raf); function tick(){ const a=getActiveAudio(); if(a && a.duration){ currentTime=a.currentTime; duration=a.duration; if(!progressDragging) updProg(); if(!isCrossfading && a.duration-a.currentTime<=crossfade && a.duration>crossfade+1 && tracks.length>1) doCrossfade(); if(a.ended && !isCrossfading) nextManual(); } raf=requestAnimationFrame(tick); } tick(); }
+
 function updProg(){ const fill=document.getElementById('prog-fill'), cur=document.getElementById('cur-time'), durEl=document.getElementById('dur-time'), remEl=document.getElementById('rem-time'), range=document.getElementById('prog-range'); const pct=duration?currentTime/duration*100:0; if(fill) fill.style.width=pct+'%'; if(cur) cur.textContent=fmt(currentTime); if(durEl) durEl.textContent=fmt(duration); if(remEl) remEl.textContent=fmtRem(Math.max(0,(duration||0)-currentTime)); if(range && !progressDragging){ range.value=currentTime; range.max=duration||100; } }
-function handleFiles(list){ [...list].forEach(f=>{ const url=URL.createObjectURL(f); const id=Math.random().toString(36).slice(2); const title=f.name.replace(/\.[^/.]+$/,''); const initial=title.trim()[0]?.toUpperCase()||'#'; const tr={id,file:f,url,title,duration:0,initial}; const tmp=new Audio(); tmp.src=url; tmp.onloadedmetadata=()=>{tr.duration=tmp.duration; render();}; tracks.push(tr); }); render(); }
+
+function handleFiles(list){ 
+  [...list].forEach(f=>{ 
+    if(!f.type.startsWith('audio/') && !f.name.match(/\.(mp3|wav|ogg|m4a|flac)$/i)) return;
+    const url=URL.createObjectURL(f); 
+    const id=Math.random().toString(36).slice(2); 
+    const title=f.name.replace(/\.[^/.]+$/,''); 
+    const initial=title.trim()[0]?.toUpperCase()||'#'; 
+    const tr={id,file:f,url,title,duration:0,initial}; 
+    const tmp=new Audio(); 
+    tmp.src=url; 
+    tmp.onloadedmetadata=()=>{tr.duration=tmp.duration; render();}; 
+    tracks.push(tr); 
+  }); 
+  render(); 
+}
+
+function clearPlaylist(){
+  tracks.forEach(t=>{ try{ URL.revokeObjectURL(t.url); }catch{} });
+  tracks=[];
+  currentIdx=0;
+  isPlaying=false;
+  audioA.pause(); audioB.pause();
+  audioA.currentTime=0; audioB.currentTime=0;
+  render();
+}
+
 function vinylHTML(track, deck, isActiveDeck, isSpinning, gain){
   const hue=deck==='A'?'#ff0a1a':'#00ff88';
   const label=track?track.initial:deck;
   return `<div class="deck-wrap" id="wrap${deck}"><div class="deck-glow" style="background:radial-gradient(circle, ${hue}33 0%, transparent 70%); opacity:${isActiveDeck?0.65:0.18}"></div><div id="deck${deck}" class="deck ${isSpinning?'playing':''}" data-deck="${deck}" style="border-color:${isActiveDeck?hue:'rgba(255,255,255,.14)'}"><div class="deck-disc"><div class="deck-disc-inner"></div><div class="shine"></div></div><div class="label-center" style="background:radial-gradient(circle at 35% 35%, #1a1a1a 0%, #0a0a0a 60%, #000 100%); border:1.5px solid ${hue}; box-shadow:0 0 0 3px #000, 0 0 14px ${hue}66"><div style="display:flex;flex-direction:column;align-items:center"><span style="font-family:Orbitron;font-weight:900;font-size:24px;color:${hue};text-shadow:0 0 10px ${hue}">${label}</span><span style="font-size:6px;letter-spacing:.25em;color:rgba(255,255,255,.4);font-family:monospace">${deck} • 33⅓</span></div></div><svg class="dotted" viewBox="0 0 100 100"><circle cx="50" cy="50" r="49" fill="none" stroke="${hue}" stroke-width="${isActiveDeck && isSpinning?0.7:0.28}" stroke-dasharray="${isActiveDeck && isSpinning?'2 4':'1 8'}" opacity="${isActiveDeck?0.62:0.18}" style="${isActiveDeck && isSpinning?'animation:spin 6s linear infinite; transform-origin:50% 50%':''}"></circle></svg>${!isActiveDeck?`<div style="position:absolute;inset:0;border-radius:50%;background:rgba(0,0,0,.38);display:grid;place-items:center;z-index:4"><div style="font-family:Orbitron;font-size:9px;color:rgba(255,255,255,.75);background:rgba(0,0,0,.65);padding:3px 8px;border-radius:20px;border:1px solid rgba(255,255,255,.15)">DROP = ATTENTE</div></div>`:''}</div><div class="gain-bar"><div class="gain-track"><div class="gain-fill" style="width:${(gain||0)*100}%; background:linear-gradient(90deg, ${hue}, #fff); box-shadow:0 0 8px ${hue}"></div></div><span style="font-size:7px;font-family:monospace;color:rgba(255,255,255,.35)">${deck}</span></div></div><div style="margin-top:18px;text-align:center;min-height:46px"><div style="font-family:Rajdhani;font-weight:800;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px;margin:0 auto;color:${isActiveDeck?'#fff':'rgba(255,255,255,.65)'}" title="${track?track.title:''}">${track?track.title:(deck==='A'?'Aucune piste':'En attente')}</div><div style="font-family:monospace;font-size:11px;margin-top:3px;color:${isActiveDeck?(deck==='A'?'#ff6a6a':'#7affc0'):'rgba(255,255,255,.45)'}">${isActiveDeck? (isCrossfading?(deck===activeDeck?'FADING OUT':'FADING IN'):(isSpinning?'▶ LECTURE':'■ STOP')) : '▶ PROCHAIN T'}</div></div>`;
 }
+
 function toggleFS(){ pseudoFS=!pseudoFS; document.documentElement.classList.toggle('is-fullscreen', pseudoFS); try{ if(pseudoFS){ const el=document.documentElement; if(el.requestFullscreen) el.requestFullscreen().catch(()=>{}); else if(el.webkitRequestFullscreen) el.webkitRequestFullscreen(); } else { if(document.fullscreenElement||document.webkitFullscreenElement){ if(document.exitFullscreen) document.exitFullscreen().catch(()=>{}); else if(document.webkitExitFullscreen) document.webkitExitFullscreen(); } } }catch(e){} render(); }
 window.toggleFS=toggleFS;
+
 function render(){
   const root=document.getElementById('app');
   const cur=tracks[currentIdx];
@@ -154,20 +218,34 @@ function render(){
           <span style="font-family:monospace;font-size:17px;color:rgba(255,255,255,.35)">AVANT LA FIN</span>
         </div>
         <div style="flex:1;max-width:520px;text-align:center;overflow:hidden"><div style="font-family:Rajdhani;font-weight:800;font-size:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${cur?cur.title:'Aucune piste'}</div><div style="font-family:monospace;font-size:12px;color:rgba(255,255,255,.5)">▶ DECK ${activeDeck} • ${isCrossfading?'MÉLANGE '+crossfade+'s':isPlaying?'LECTURE':'PAUSE'} ${nxt && cur ? `• SUIVANT: ${nxt.title}`:''} • ${tracks.length} RESTANTS</div></div>
-        <div style="display:flex;gap:8px"><button id="m10" class="btn" style="padding:7px 12px;border-radius:10px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);color:#fff">-10s</button><button id="p10" class="btn" style="padding:7px 12px;border-radius:10px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);color:#fff">+10s</button></div>
       </div>
       <div id="prog-wrap" class="progress-wrap"><div id="prog-fill" class="progress-fill" style="width:${duration?currentTime/duration*100:0}%"></div><input id="prog-range" type="range" min="0" max="${duration||100}" value="${currentTime}" step="0.1" style="position:absolute;inset:0;width:100%;opacity:0;cursor:pointer"></div>
     </div>
     <main style="flex:1;max-width:1440px;margin:0 auto;width:100%;padding:14px;display:flex;flex-direction:column;gap:14px">
       <div style="display:grid;grid-template-columns:1fr 190px 1fr;gap:14px;align-items:start;background:rgba(10,14,18,.55);border:1px solid rgba(255,255,255,.07);border-radius:18px;padding:18px 14px">
         <div>${vinylHTML(trackOnA,'A', isActiveA, spinningA, gainAVal)}</div>
-        <div style="display:flex;flex-direction:column;gap:12px;align-items:center;padding-top:24px">
-          <div style="width:100%;height:6px;background:rgba(255,255,255,.08);border-radius:10px;position:relative;overflow:hidden"><div id="xfade-cursor" style="position:absolute;top:-2px;bottom:-2px;width:4px;background:#fff;box-shadow:0 0 12px #fff;border-radius:10px;left:${activeDeck==='A'?'0%':'100%'};transition:left ${isCrossfading?crossfade:0.3}s linear"></div></div>
-          <div style="display:flex;gap:8px"><button id="prev" class="btn" style="width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:#fff">⏮</button><button id="play" class="btn" style="width:60px;height:60px;border-radius:50%;background:#fff;color:#000;font-size:22px;font-weight:900"> ${isPlaying?'II':'▶'} </button><button id="next" class="btn" style="width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:#fff">⏭</button></div>
+        <div style="display:flex;flex-direction:column;gap:12px;align-items:center;padding-top:14px">
+          
+          <!-- CROSSFADER MANUEL STYLE TABLE DE MIXAGE -->
+          <div style="width:100%; text-align:center;">
+            <div style="display:flex; justify-content:space-between; font-family:Orbitron; font-size:8px; color:rgba(255,255,255,.4); margin-bottom:4px;">
+              <span style="color:#ff0a1a">DECK A</span>
+              <span>CROSSFADER</span>
+              <span style="color:#00ff88">DECK B</span>
+            </div>
+            <div class="xfader-container">
+              <div class="xfader-track"></div>
+              <div class="xfader-track-fill"></div>
+              <input id="xfade-slider" class="xfader-input" type="range" min="0" max="100" value="${manualXFadeVal}">
+              <div id="xfade-knob" class="xfader-knob" style="left:${manualXFadeVal}%"></div>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:8px;margin-top:6px"><button id="prev" class="btn" style="width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:#fff">⏮</button><button id="play" class="btn" style="width:60px;height:60px;border-radius:50%;background:#fff;color:#000;font-size:22px;font-weight:900"> ${isPlaying?'II':'▶'} </button><button id="next" class="btn" style="width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:#fff">⏭</button></div>
           <div style="font-family:Orbitron;font-size:9px;color:rgba(255,255,255,.4);text-align:center">DECK ${activeDeck} ACTIF • AUTO-DELETE ON</div>
           
           <!-- LOGO ROND FULL - REMPLIT TOUT LE CERCLE -->
-          <div style="margin-top:18px; display:flex; flex-direction:column; align-items:center; gap:8px;">
+          <div style="margin-top:10px; display:flex; flex-direction:column; align-items:center; gap:8px;">
             <div class="center-logo-wrap" id="centerLogoWrap">
               <img id="centerLogo" src="logo2.png" alt="GT GASNIER TECH" onerror="this.style.display='none'; document.getElementById('centerPlaceholder').style.display='flex';">
               <div id="centerPlaceholder" style="display:none; width:100%; height:100%; border-radius:50%; border:2px dashed rgba(255,255,255,.18); align-items:center; justify-content:center; flex-direction:column; gap:4px; background:rgba(255,255,255,.02);">
@@ -180,24 +258,73 @@ function render(){
         </div>
         <div>${vinylHTML(trackOnB,'B', isActiveB, spinningB, gainBVal)}</div>
       </div>
-      <div style="display:grid;grid-template-columns:320px 1fr;gap:12px"><div id="drop" style="border:2px dashed rgba(255,255,255,.14);border-radius:14px;padding:14px;background:rgba(10,14,18,.6);cursor:pointer"><div style="font-weight:800">Importer MP3</div><div style="font-family:monospace;font-size:11px;color:rgba(255,255,255,.45)">Glisse-dépose. Titre${crossfade}s. Titres joués = supprimés auto</div><label style="margin-top:8px;display:inline-block;padding:6px 14px;background:#fff;color:#000;border-radius:20px;font-size:11px;font-weight:900;cursor:pointer">PARCOURIR <input id="file" type="file" multiple accept="audio/*" style="display:none"></label><div style="margin-top:8px;font-family:monospace;font-size:10px;color:rgba(255,255,255,.35)">${tracks.length} TRACKS RESTANTS</div></div><div style="background:rgba(10,14,18,.75);border:1px solid rgba(255,255,255,.08);border-radius:14px;overflow:hidden;max-height:260px;display:flex;flex-direction:column"><div style="padding:8px 12px;border-bottom:1px solid rgba(255,255,255,.07);font-family:monospace;font-size:10px;color:rgba(255,255,255,.45)">Paylist : les titres joués disparaissent</div><div style="overflow:auto;flex:1">${tracks.length===0?`<div style="padding:20px;text-align:center;font-family:monospace;font-size:11px;color:rgba(255,255,255,.35)">La liste est vide - tous les titres ont été joués !</div>`: tracks.map((t,i)=>`<div class="row" data-i="${i}" draggable="true" style="display:flex;gap:10px;align-items:center;padding:9px 12px;border-bottom:1px solid rgba(255,255,255,.05);cursor:grab;background:${i===currentIdx?'rgba(255,10,26,.08)':'transparent'}"><div style="width:20px;height:20px;border-radius:50%;border:1px solid rgba(255,255,255,.12);display:grid;place-items:center;font-size:10px">${i+1}</div><div style="flex:1;font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t.title}</div><button class="del" data-id="${t.id}" style="width:22px;height:22px;border-radius:50%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:#fff">✕</button></div>`).join('')}</div></div></div>
+      <div style="display:grid;grid-template-columns:320px 1fr;gap:12px">
+        <div id="drop" style="border:2px dashed rgba(255,255,255,.14);border-radius:14px;padding:14px;background:rgba(10,14,18,.6);cursor:pointer">
+          <div style="font-weight:800">Importer MP3</div>
+          <div style="font-family:monospace;font-size:11px;color:rgba(255,255,255,.45)">Glisse-dépose ou bouton par fichier / dossier</div>
+          <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
+            <label style="padding:6px 12px;background:#fff;color:#000;border-radius:20px;font-size:11px;font-weight:900;cursor:pointer">FICHIERS <input id="file" type="file" multiple accept="audio/*" style="display:none"></label>
+            <label style="padding:6px 12px;background:#00ff88;color:#000;border-radius:20px;font-size:11px;font-weight:900;cursor:pointer">DOSSIER <input id="folder" type="file" webkitdirectory directory multiple style="display:none"></label>
+          </div>
+          <div style="margin-top:10px;font-family:monospace;font-size:10px;color:rgba(255,255,255,.35)">${tracks.length} TRACKS RESTANTS</div>
+        </div>
+        <div style="background:rgba(10,14,18,.75);border:1px solid rgba(255,255,255,.08);border-radius:14px;overflow:hidden;max-height:260px;display:flex;flex-direction:column">
+          <div style="padding:8px 12px;border-bottom:1px solid rgba(255,255,255,.07);display:flex;justify-content:space-between;align-items:center">
+            <span style="font-family:monospace;font-size:10px;color:rgba(255,255,255,.45)">Playlist : les titres joués disparaissent</span>
+            <button id="btnClear" class="btn" style="padding:3px 10px;border-radius:12px;background:rgba(255,10,26,.2);border:1px solid rgba(255,10,26,.4);color:#ff8a8a;font-size:10px">🗑 VIDER</button>
+          </div>
+          <div style="overflow:auto;flex:1">${tracks.length===0?`<div style="padding:20px;text-align:center;font-family:monospace;font-size:11px;color:rgba(255,255,255,.35)">La liste est vide - tous les titres ont été joués !</div>`: tracks.map((t,i)=>`<div class="row" data-i="${i}" draggable="true" style="display:flex;gap:10px;align-items:center;padding:9px 12px;border-bottom:1px solid rgba(255,255,255,.05);cursor:grab;background:${i===currentIdx?'rgba(255,10,26,.08)':'transparent'}"><div style="width:20px;height:20px;border-radius:50%;border:1px solid rgba(255,255,255,.12);display:grid;place-items:center;font-size:10px">${i+1}</div><div style="flex:1;font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t.title}</div><button class="del" data-id="${t.id}" style="width:22px;height:22px;border-radius:50%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:#fff">✕</button></div>`).join('')}</div>
+        </div>
+      </div>
     </main>
   </div>`;
+
   document.getElementById('fsBtn').onclick=toggleFS;
   document.getElementById('xf').oninput=e=>{ crossfade=parseInt(e.target.value); render(); };
   document.getElementById('play').onclick=async()=>{ initAudio(); if(ctx.state==='suspended') await ctx.resume(); if(!tracks.length) return; if(isPlaying){ getActiveAudio().pause(); isPlaying=false; cancelAnimationFrame(raf); } else { if(!getActiveAudio().src) await loadToDeck(currentIdx, activeDeck); await getActiveAudio().play(); isPlaying=true; loop(); } render(); };
   document.getElementById('prev').onclick=prevManual; document.getElementById('next').onclick=nextManual;
-  document.getElementById('m10').onclick=()=>{ const a=getActiveAudio(); a.currentTime=Math.max(0,a.currentTime-10); };
-  document.getElementById('p10').onclick=()=>{ const a=getActiveAudio(); a.currentTime=Math.min(a.duration||Infinity,a.currentTime+10); };
+  
+  const xfSlider = document.getElementById('xfade-slider');
+  if(xfSlider){
+    xfSlider.oninput = e => updateManualCrossfade(parseFloat(e.target.value));
+  }
+
   document.getElementById('file').onchange=e=> handleFiles(e.target.files);
-  const drop=document.getElementById('drop'); drop.ondragover=e=>{ e.preventDefault(); drop.style.borderColor='#00ff88'; }; drop.ondragleave=()=> drop.style.borderColor='rgba(255,255,255,.14)'; drop.ondrop=e=>{ e.preventDefault(); drop.style.borderColor='rgba(255,255,255,.14)'; handleFiles(e.dataTransfer.files); }; drop.onclick=()=> document.getElementById('file').click();
+  document.getElementById('folder').onchange=e=> handleFiles(e.target.files);
+  document.getElementById('btnClear').onclick=clearPlaylist;
+
+  const drop=document.getElementById('drop'); 
+  drop.ondragover=e=>{ e.preventDefault(); drop.style.borderColor='#00ff88'; }; 
+  drop.ondragleave=()=> drop.style.borderColor='rgba(255,255,255,.14)'; 
+  drop.ondrop=e=>{ 
+    e.preventDefault(); 
+    drop.style.borderColor='rgba(255,255,255,.14)'; 
+    if(e.dataTransfer.items){
+      const files = [];
+      for(let i=0; i<e.dataTransfer.items.length; i++){
+        const item = e.dataTransfer.items[i].webkitGetAsEntry ? e.dataTransfer.items[i].webkitGetAsEntry() : null;
+        if(item && item.isDirectory){
+          parseDirectory(item);
+        } else {
+          const f = e.dataTransfer.files[i];
+          if(f) files.push(f);
+        }
+      }
+      if(files.length) handleFiles(files);
+    } else {
+      handleFiles(e.dataTransfer.files); 
+    }
+  };
+
   document.querySelectorAll('.row').forEach(el=>{
     el.ondragstart=ev=>{ ev.dataTransfer.setData('text/plain', el.dataset.i); ev.dataTransfer.setData('trackIdx', el.dataset.i); };
     el.ondragover=ev=> ev.preventDefault();
     el.ondrop=ev=>{ ev.preventDefault(); const from=parseInt(ev.dataTransfer.getData('text/plain')); const to=parseInt(el.dataset.i); if(!isNaN(from)&&from!==to){ const [m]=tracks.splice(from,1); tracks.splice(to,0,m); if(currentIdx===from) currentIdx=to; else if(from<currentIdx && to>=currentIdx) currentIdx--; else if(from>currentIdx && to<=currentIdx) currentIdx++; render(); } };
     el.onclick=()=> startPlayback(parseInt(el.dataset.i));
   });
+
   document.querySelectorAll('.del').forEach(b=> b.onclick=ev=>{ ev.stopPropagation(); const idx=tracks.findIndex(t=>t.id===b.dataset.id); if(idx!==-1){ URL.revokeObjectURL(tracks[idx].url); tracks.splice(idx,1); if(idx===currentIdx){ isPlaying=false; getActiveAudio().pause(); } if(currentIdx>=tracks.length) currentIdx=Math.max(0,tracks.length-1); render(); } });
+
   ['deckA','deckB'].forEach(id=>{
     const deck=document.getElementById(id); if(!deck) return;
     deck.ondragover=e=>{ e.preventDefault(); document.getElementById('wrap'+deck.dataset.deck)?.classList.add('drag-over'); };
@@ -211,10 +338,25 @@ function render(){
       else { const [moved]=tracks.splice(ti,1); const ins=currentIdx+1; const finalPos=ins>tracks.length?tracks.length:ins; tracks.splice(finalPos,0,moved); loadToDeck(finalPos, targetDeck); render(); }
     };
   });
+
   const range=document.getElementById('prog-range'), wrap=document.getElementById('prog-wrap');
   if(range){ range.oninput=e=>{ progressDragging=true; const a=getActiveAudio(); const v=parseFloat(e.target.value); if(!isNaN(v)) a.currentTime=v; updProg(); }; range.onchange=()=> progressDragging=false; }
   if(wrap){ wrap.onclick=e=>{ if(e.target.id==='prog-range') return; const rect=wrap.getBoundingClientRect(); const pct=(e.clientX-rect.left)/rect.width; const a=getActiveAudio(); if(a.duration) a.currentTime=pct*a.duration; }; }
 }
+
+function parseDirectory(dirEntry){
+  const reader = dirEntry.createReader();
+  reader.readEntries(entries => {
+    entries.forEach(entry => {
+      if(entry.isFile){
+        entry.file(f => handleFiles([f]));
+      } else if(entry.isDirectory){
+        parseDirectory(entry);
+      }
+    });
+  });
+}
+
 render();
 document.addEventListener('keydown', e=>{ if(e.key.toLowerCase()==='f'){ toggleFS(); } if(e.key==='Escape' && pseudoFS){ toggleFS(); } });
 document.addEventListener('fullscreenchange', ()=>{ render(); });
