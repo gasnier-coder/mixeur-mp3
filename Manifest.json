@@ -1,6 +1,6 @@
 {
-  "name": "GASNIER TECH - MIXEUR MP3",
-  "short_name": "GASNIER TECH",
+  "name": "GASNIER TECH - MIXEUR MP3 v2",
+  "short_name": "GASNIER TECH v2",
   "description": "Mixeur MP3 double platine avec fondu auto 14s, auto-delete et logo rond full",
   "start_url": "./index.html",
   "scope": "./",
