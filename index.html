@@ -32,12 +32,11 @@ html.is-fullscreen{overflow:hidden}
 html.is-fullscreen body{overflow:hidden}
 html.is-fullscreen #app{position:fixed !important;inset:0 !important;width:100vw !important;height:100vh !important;height:100dvh !important;z-index:2147483647 !important;background:#06080a !important;overflow:auto !important}
 #rem-time{font-size:28px; font-variant-numeric:tabular-nums; min-width:115px; text-align:center; display:inline-block; padding:2px 12px !important; letter-spacing:0.03em;}
-/* LOGO ROND CENTRE - VERSION FULL */
+
 .center-logo-wrap{width:176px;height:176px;border-radius:50%;border:3px solid #ff0a1a;background:#000;overflow:hidden;display:grid;place-items:center;box-shadow:0 0 22px rgba(255,10,26,.45), inset 0 0 20px rgba(0,0,0,.8);position:relative;transition:.3s}
 .center-logo-wrap:hover{transform:scale(1.03); box-shadow:0 0 30px rgba(255,10,26,.6)}
 .center-logo-wrap img{width:100%;height:100%;object-fit:cover;display:block; border-radius:50%;}
 
-/* CROSSFADER MANUEL AMÉLIORÉ */
 .xfader-container { position: relative; width: 100%; height: 26px; display: flex; align-items: center; justify-content: center; }
 .xfader-track { position: absolute; width: 100%; height: 8px; background: #000; border: 1px solid rgba(255,255,255,.15); border-radius: 4px; box-shadow: inset 0 1px 3px rgba(0,0,0,.8); }
 .xfader-track-fill { position: absolute; height: 100%; border-radius: 4px; background: linear-gradient(90deg, #ff0a1a 0%, #00ff88 100%); opacity: 0.3; width: 100%; }
@@ -51,113 +50,275 @@ html.is-fullscreen #app{position:fixed !important;inset:0 !important;width:100vw
 <script>
 let tracks=[], currentIdx=0, isPlaying=false, isCrossfading=false, crossfade=14, shuffle=false, pseudoFS=false;
 let audioA=new Audio(), audioB=new Audio(), activeDeck='A', currentTime=0, duration=0;
-let ctx,gainA,gainB,master,srcA,srcB,raf,progressDragging=false;
+let ctx=null, gainA=null, gainB=null, master=null, srcA=null, srcB=null, raf=null, progressDragging=false;
 let manualXFadeVal=0; // 0 = Deck A, 100 = Deck B
+
 audioA.preload='auto'; audioB.preload='auto';
+audioA.crossOrigin='anonymous'; audioB.crossOrigin='anonymous';
 
 function fmt(s){ if(!s||isNaN(s)) return '00:00'; const m=Math.floor(s/60), sec=Math.floor(s%60); return `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`}
 function fmtRem(s){ if(!s||isNaN(s)) return '  -00:00  '; const m=Math.floor(s/60), sec=Math.floor(s%60); return `  -${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}  ` }
 
-function initAudio(){
-  if(ctx) return;
-  ctx=new (window.AudioContext||window.webkitAudioContext)();
-  master=ctx.createGain(); gainA=ctx.createGain(); gainB=ctx.createGain();
-  master.gain.value=0.95; gainA.connect(master); gainB.connect(master); master.connect(ctx.destination);
-  try{ srcA=ctx.createMediaElementSource(audioA);}catch{}
-  try{ srcB=ctx.createMediaElementSource(audioB);}catch{}
-  gainA.gain.value=1; gainB.gain.value=0; audioA.volume=1; audioB.volume=0;
+async function initAudio(){
+  if(!ctx){
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    ctx = new AudioCtx();
+    master = ctx.createGain();
+    gainA = ctx.createGain();
+    gainB = ctx.createGain();
+    
+    master.gain.value = 1.0;
+    gainA.gain.value = (activeDeck === 'A') ? 1.0 : 0.0;
+    gainB.gain.value = (activeDeck === 'B') ? 1.0 : 0.0;
+    
+    gainA.connect(master);
+    gainB.connect(master);
+    master.connect(ctx.destination);
+    
+    try { srcA = ctx.createMediaElementSource(audioA); srcA.connect(gainA); } catch(e){}
+    try { srcB = ctx.createMediaElementSource(audioB); srcB.connect(gainB); } catch(e){}
+  }
+  
+  if(ctx && ctx.state === 'suspended'){
+    await ctx.resume();
+  }
 }
 
-function getActiveAudio(){return activeDeck==='A'?audioA:audioB}
+function getActiveAudio(){ return activeDeck==='A'?audioA:audioB; }
 
-async function loadToDeck(idx,deck){ if(!tracks[idx]) return; const aud=deck==='A'?audioA:audioB; if(aud.src!==tracks[idx].url){ aud.src=tracks[idx].url; aud.load(); await new Promise(r=>{aud.onloadedmetadata=r; setTimeout(r,500);}); } }
+async function loadToDeck(idx, deck){ 
+  if(!tracks[idx]) return; 
+  const aud = (deck === 'A') ? audioA : audioB; 
+  if(aud.src !== tracks[idx].url){ 
+    aud.src = tracks[idx].url; 
+    aud.load(); 
+    await new Promise(r => {
+      const onMeta = () => { aud.removeEventListener('loadedmetadata', onMeta); r(); };
+      aud.addEventListener('loadedmetadata', onMeta);
+      setTimeout(r, 500);
+    }); 
+  } 
+}
 
-async function startPlayback(idx){ if(!tracks[idx]) return; currentIdx=idx; activeDeck='A'; manualXFadeVal=0; initAudio(); if(ctx.state==='suspended') await ctx.resume(); audioB.pause(); audioB.currentTime=0; gainA.gain.value=1; gainB.gain.value=0; audioA.volume=1; audioB.volume=0; isCrossfading=false; await loadToDeck(idx,'A'); await audioA.play(); isPlaying=true; loop(); render(); }
+async function startPlayback(idx){ 
+  if(!tracks[idx]) return; 
+  await initAudio();
+  currentIdx = idx; 
+  activeDeck = 'A'; 
+  manualXFadeVal = 0; 
+  
+  audioB.pause(); 
+  audioB.currentTime = 0; 
+  
+  if(gainA) gainA.gain.value = 1;
+  if(gainB) gainB.gain.value = 0;
+  audioA.volume = 1; 
+  audioB.volume = 0; 
+  
+  isCrossfading = false; 
+  await loadToDeck(idx, 'A'); 
+  
+  try {
+    await audioA.play(); 
+    isPlaying = true; 
+  } catch(err) {
+    console.error("Erreur lecture:", err);
+  }
+  
+  loop(); 
+  render(); 
+}
 
 function nextManual(){
   if(tracks.length===0) return;
   const oldIdx = currentIdx;
-  let n=shuffle?Math.floor(Math.random()*tracks.length):currentIdx+1; 
-  if(n>=tracks.length) n=0; 
+  let n = shuffle ? Math.floor(Math.random()*tracks.length) : currentIdx+1; 
+  if(n >= tracks.length) n = 0; 
   const oldTrack = tracks[oldIdx];
   if(oldTrack){
     try{ URL.revokeObjectURL(oldTrack.url); }catch{}
-    tracks.splice(oldIdx,1);
-    if(tracks.length===0){ isPlaying=false; getActiveAudio().pause(); currentIdx=0; render(); return; }
+    tracks.splice(oldIdx, 1);
+    if(tracks.length===0){ 
+      isPlaying = false; 
+      getActiveAudio().pause(); 
+      currentIdx = 0; 
+      render(); 
+      return; 
+    }
     if(oldIdx < n) n--;
-    if(n>=tracks.length) n=0;
+    if(n >= tracks.length) n = 0;
   }
   startPlayback(n);
 }
 
-function prevManual(){ let p=currentIdx-1; if(p<0) p=tracks.length-1; startPlayback(p); }
+function prevManual(){ 
+  let p = currentIdx - 1; 
+  if(p < 0) p = tracks.length - 1; 
+  startPlayback(p); 
+}
 
 function updateManualCrossfade(val){
-  manualXFadeVal=val;
-  if(!ctx) return;
+  manualXFadeVal = val;
   const p = val / 100; // 0 (Deck A) à 1 (Deck B)
   const gA = Math.cos(p * Math.PI / 2);
   const gB = Math.cos((1 - p) * Math.PI / 2);
-  gainA.gain.value = gA;
-  gainB.gain.value = gB;
+  
+  if(gainA) gainA.gain.value = gA;
+  if(gainB) gainB.gain.value = gB;
+  
   audioA.volume = gA;
   audioB.volume = gB;
+  
   const knob = document.getElementById('xfade-knob');
   if(knob) knob.style.left = val + '%';
 }
 
 async function doCrossfade(){
-  if(tracks.length<2 || isCrossfading) return;
+  if(tracks.length < 2 || isCrossfading) return;
+  await initAudio();
+  
   const oldIdx = currentIdx;
-  const nextIdx=shuffle?Math.floor(Math.random()*tracks.length):(currentIdx+1)%tracks.length;
-  if(nextIdx===currentIdx) return;
-  isCrossfading=true; render();
-  const fromDeck=activeDeck, toDeck=fromDeck==='A'?'B':'A';
-  const fromAudio=fromDeck==='A'?audioA:audioB, toAudio=toDeck==='A'?audioA:audioB;
-  await loadToDeck(nextIdx,toDeck); toAudio.currentTime=0; try{await toAudio.play();}catch{}
-  const start=performance.now(), dur=crossfade*1000;
+  const nextIdx = shuffle ? Math.floor(Math.random()*tracks.length) : (currentIdx+1)%tracks.length;
+  if(nextIdx === currentIdx) return;
+  
+  isCrossfading = true; 
+  render();
+  
+  const fromDeck = activeDeck;
+  const toDeck = (fromDeck === 'A') ? 'B' : 'A';
+  const fromAudio = (fromDeck === 'A') ? audioA : audioB;
+  const toAudio = (toDeck === 'A') ? audioA : audioB;
+  
+  await loadToDeck(nextIdx, toDeck); 
+  toAudio.currentTime = 0; 
+  
+  try { await toAudio.play(); } catch(e){}
+  
+  const start = performance.now();
+  const dur = crossfade * 1000;
+  
   function step(now){
-    const p=Math.min((now-start)/dur,1);
-    const g1=Math.cos(p*Math.PI/2), g2=Math.cos((1-p)*Math.PI/2);
-    if(fromDeck==='A'){ gainA.gain.value=g1; gainB.gain.value=g2; audioA.volume=g1; audioB.volume=g2; manualXFadeVal=p*100; } 
-    else { gainB.gain.value=g1; gainA.gain.value=g2; audioB.volume=g1; audioA.volume=g2; manualXFadeVal=(1-p)*100; }
-    const knob=document.getElementById('xfade-knob'); if(knob) knob.style.left=manualXFadeVal+'%';
-    const slider=document.getElementById('xfade-slider'); if(slider) slider.value=manualXFadeVal;
-    if(p<1) requestAnimationFrame(step);
-    else { 
-      fromAudio.pause(); fromAudio.currentTime=0; 
+    const p = Math.min((now - start) / dur, 1);
+    const g1 = Math.cos(p * Math.PI / 2);
+    const g2 = Math.cos((1 - p) * Math.PI / 2);
+    
+    if(fromDeck === 'A'){ 
+      if(gainA) gainA.gain.value = g1; 
+      if(gainB) gainB.gain.value = g2; 
+      audioA.volume = g1; 
+      audioB.volume = g2; 
+      manualXFadeVal = p * 100; 
+    } else { 
+      if(gainB) gainB.gain.value = g1; 
+      if(gainA) gainA.gain.value = g2; 
+      audioB.volume = g1; 
+      audioA.volume = g2; 
+      manualXFadeVal = (1 - p) * 100; 
+    }
+    
+    const knob = document.getElementById('xfade-knob'); 
+    if(knob) knob.style.left = manualXFadeVal + '%';
+    const slider = document.getElementById('xfade-slider'); 
+    if(slider) slider.value = manualXFadeVal;
+    
+    if(p < 1) {
+      requestAnimationFrame(step);
+    } else { 
+      fromAudio.pause(); 
+      fromAudio.currentTime = 0; 
       let newIdx = nextIdx;
       const playedTrack = tracks[oldIdx];
+      
       if(playedTrack){
         try{ URL.revokeObjectURL(playedTrack.url); }catch{}
-        tracks.splice(oldIdx,1);
+        tracks.splice(oldIdx, 1);
         if(oldIdx < newIdx) newIdx--;
       }
-      if(tracks.length===0){ isPlaying=false; isCrossfading=false; currentIdx=0; render(); return; }
-      activeDeck=toDeck; currentIdx=newIdx; isCrossfading=false; 
-      manualXFadeVal = activeDeck === 'A' ? 0 : 100;
-      if(activeDeck==='A'){gainA.gain.value=1;gainB.gain.value=0;audioA.volume=1;audioB.volume=0;}else{gainB.gain.value=1;gainA.gain.value=0;audioB.volume=1;audioA.volume=0;} 
-      render(); loop(); 
+      
+      if(tracks.length === 0){ 
+        isPlaying = false; 
+        isCrossfading = false; 
+        currentIdx = 0; 
+        render(); 
+        return; 
+      }
+      
+      activeDeck = toDeck; 
+      currentIdx = newIdx; 
+      isCrossfading = false; 
+      manualXFadeVal = (activeDeck === 'A') ? 0 : 100;
+      
+      if(activeDeck === 'A'){
+        if(gainA) gainA.gain.value = 1;
+        if(gainB) gainB.gain.value = 0;
+        audioA.volume = 1; 
+        audioB.volume = 0;
+      } else {
+        if(gainB) gainB.gain.value = 1;
+        if(gainA) gainA.gain.value = 0;
+        audioB.volume = 1; 
+        audioA.volume = 0;
+      } 
+      
+      render(); 
+      loop(); 
     }
   }
   requestAnimationFrame(step);
 }
 
-function loop(){ cancelAnimationFrame(raf); function tick(){ const a=getActiveAudio(); if(a && a.duration){ currentTime=a.currentTime; duration=a.duration; if(!progressDragging) updProg(); if(!isCrossfading && a.duration-a.currentTime<=crossfade && a.duration>crossfade+1 && tracks.length>1) doCrossfade(); if(a.ended && !isCrossfading) nextManual(); } raf=requestAnimationFrame(tick); } tick(); }
+function loop(){ 
+  cancelAnimationFrame(raf); 
+  function tick(){ 
+    const a = getActiveAudio(); 
+    if(a && a.duration){ 
+      currentTime = a.currentTime; 
+      duration = a.duration; 
+      if(!progressDragging) updProg(); 
+      if(!isCrossfading && a.duration - a.currentTime <= crossfade && a.duration > crossfade + 1 && tracks.length > 1){
+        doCrossfade(); 
+      }
+      if(a.ended && !isCrossfading) nextManual(); 
+    } 
+    raf = requestAnimationFrame(tick); 
+  } 
+  tick(); 
+}
 
-function updProg(){ const fill=document.getElementById('prog-fill'), cur=document.getElementById('cur-time'), durEl=document.getElementById('dur-time'), remEl=document.getElementById('rem-time'), range=document.getElementById('prog-range'); const pct=duration?currentTime/duration*100:0; if(fill) fill.style.width=pct+'%'; if(cur) cur.textContent=fmt(currentTime); if(durEl) durEl.textContent=fmt(duration); if(remEl) remEl.textContent=fmtRem(Math.max(0,(duration||0)-currentTime)); if(range && !progressDragging){ range.value=currentTime; range.max=duration||100; } }
+function updProg(){ 
+  const fill = document.getElementById('prog-fill');
+  const cur = document.getElementById('cur-time');
+  const durEl = document.getElementById('dur-time');
+  const remEl = document.getElementById('rem-time');
+  const range = document.getElementById('prog-range'); 
+  
+  const pct = duration ? currentTime / duration * 100 : 0; 
+  if(fill) fill.style.width = pct + '%'; 
+  if(cur) cur.textContent = fmt(currentTime); 
+  if(durEl) durEl.textContent = fmt(duration); 
+  if(remEl) remEl.textContent = fmtRem(Math.max(0, (duration||0) - currentTime)); 
+  if(range && !progressDragging){ 
+    range.value = currentTime; 
+    range.max = duration || 100; 
+  } 
+}
 
 function handleFiles(list){ 
-  [...list].forEach(f=>{ 
+  initAudio();
+  [...list].forEach(f => { 
     if(!f.type.startsWith('audio/') && !f.name.match(/\.(mp3|wav|ogg|m4a|flac)$/i)) return;
-    const url=URL.createObjectURL(f); 
-    const id=Math.random().toString(36).slice(2); 
-    const title=f.name.replace(/\.[^/.]+$/,''); 
-    const initial=title.trim()[0]?.toUpperCase()||'#'; 
-    const tr={id,file:f,url,title,duration:0,initial}; 
-    const tmp=new Audio(); 
-    tmp.src=url; 
-    tmp.onloadedmetadata=()=>{tr.duration=tmp.duration; render();}; 
+    const url = URL.createObjectURL(f); 
+    const id = Math.random().toString(36).slice(2); 
+    const title = f.name.replace(/\.[^/.]+$/, ''); 
+    const initial = title.trim()[0]?.toUpperCase() || '#'; 
+    const tr = { id, file: f, url, title, duration: 0, initial }; 
+    
+    const tmp = new Audio(); 
+    tmp.src = url; 
+    tmp.onloadedmetadata = () => {
+      tr.duration = tmp.duration; 
+      render();
+    }; 
     tracks.push(tr); 
   }); 
   render(); 
@@ -179,38 +340,55 @@ function shufflePlaylist(){
 }
 
 function clearPlaylist(){
-  tracks.forEach(t=>{ try{ URL.revokeObjectURL(t.url); }catch{} });
-  tracks=[];
-  currentIdx=0;
-  isPlaying=false;
+  tracks.forEach(t => { try{ URL.revokeObjectURL(t.url); }catch{} });
+  tracks = [];
+  currentIdx = 0;
+  isPlaying = false;
   audioA.pause(); audioB.pause();
-  audioA.currentTime=0; audioB.currentTime=0;
+  audioA.currentTime = 0; audioB.currentTime = 0;
   render();
 }
 
 function vinylHTML(track, deck, isActiveDeck, isSpinning, gain){
-  const hue=deck==='A'?'#ff0a1a':'#00ff88';
-  const label=track?track.initial:deck;
+  const hue = deck === 'A' ? '#ff0a1a' : '#00ff88';
+  const label = track ? track.initial : deck;
   return `<div class="deck-wrap" id="wrap${deck}"><div class="deck-glow" style="background:radial-gradient(circle, ${hue}33 0%, transparent 70%); opacity:${isActiveDeck?0.65:0.18}"></div><div id="deck${deck}" class="deck ${isSpinning?'playing':''}" data-deck="${deck}" style="border-color:${isActiveDeck?hue:'rgba(255,255,255,.14)'}"><div class="deck-disc"><div class="deck-disc-inner"></div><div class="shine"></div></div><div class="label-center" style="background:radial-gradient(circle at 35% 35%, #1a1a1a 0%, #0a0a0a 60%, #000 100%); border:1.5px solid ${hue}; box-shadow:0 0 0 3px #000, 0 0 14px ${hue}66"><div style="display:flex;flex-direction:column;align-items:center"><span style="font-family:Orbitron;font-weight:900;font-size:24px;color:${hue};text-shadow:0 0 10px ${hue}">${label}</span><span style="font-size:6px;letter-spacing:.25em;color:rgba(255,255,255,.4);font-family:monospace">${deck} • 33⅓</span></div></div><svg class="dotted" viewBox="0 0 100 100"><circle cx="50" cy="50" r="49" fill="none" stroke="${hue}" stroke-width="${isActiveDeck && isSpinning?0.7:0.28}" stroke-dasharray="${isActiveDeck && isSpinning?'2 4':'1 8'}" opacity="${isActiveDeck?0.62:0.18}" style="${isActiveDeck && isSpinning?'animation:spin 6s linear infinite; transform-origin:50% 50%':''}"></circle></svg>${!isActiveDeck?`<div style="position:absolute;inset:0;border-radius:50%;background:rgba(0,0,0,.38);display:grid;place-items:center;z-index:4"><div style="font-family:Orbitron;font-size:9px;color:rgba(255,255,255,.75);background:rgba(0,0,0,.65);padding:3px 8px;border-radius:20px;border:1px solid rgba(255,255,255,.15)">DROP = ATTENTE</div></div>`:''}</div><div class="gain-bar"><div class="gain-track"><div class="gain-fill" style="width:${(gain||0)*100}%; background:linear-gradient(90deg, ${hue}, #fff); box-shadow:0 0 8px ${hue}"></div></div><span style="font-size:7px;font-family:monospace;color:rgba(255,255,255,.35)">${deck}</span></div></div><div style="margin-top:18px;text-align:center;min-height:46px"><div style="font-family:Rajdhani;font-weight:800;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px;margin:0 auto;color:${isActiveDeck?'#fff':'rgba(255,255,255,.65)'}" title="${track?track.title:''}">${track?track.title:(deck==='A'?'Aucune piste':'En attente')}</div><div style="font-family:monospace;font-size:11px;margin-top:3px;color:${isActiveDeck?(deck==='A'?'#ff6a6a':'#7affc0'):'rgba(255,255,255,.45)'}">${isActiveDeck? (isCrossfading?(deck===activeDeck?'FADING OUT':'FADING IN'):(isSpinning?'▶ LECTURE':'■ STOP')) : '▶ PROCHAIN T'}</div></div>`;
 }
 
-function toggleFS(){ pseudoFS=!pseudoFS; document.documentElement.classList.toggle('is-fullscreen', pseudoFS); try{ if(pseudoFS){ const el=document.documentElement; if(el.requestFullscreen) el.requestFullscreen().catch(()=>{}); else if(el.webkitRequestFullscreen) el.webkitRequestFullscreen(); } else { if(document.fullscreenElement||document.webkitFullscreenElement){ if(document.exitFullscreen) document.exitFullscreen().catch(()=>{}); else if(document.webkitExitFullscreen) document.webkitExitFullscreen(); } } }catch(e){} render(); }
-window.toggleFS=toggleFS;
+function toggleFS(){ 
+  pseudoFS = !pseudoFS; 
+  document.documentElement.classList.toggle('is-fullscreen', pseudoFS); 
+  try{ 
+    if(pseudoFS){ 
+      const el = document.documentElement; 
+      if(el.requestFullscreen) el.requestFullscreen().catch(()=>{}); 
+      else if(el.webkitRequestFullscreen) el.webkitRequestFullscreen(); 
+    } else { 
+      if(document.fullscreenElement || document.webkitFullscreenElement){ 
+        if(document.exitFullscreen) document.exitFullscreen().catch(()=>{}); 
+        else if(document.webkitExitFullscreen) document.webkitExitFullscreen(); 
+      } 
+    } 
+  }catch(e){} 
+  render(); 
+}
+window.toggleFS = toggleFS;
 
 function render(){
-  const root=document.getElementById('app');
-  const cur=tracks[currentIdx];
-  const nxt=tracks[(currentIdx+1)%tracks.length];
-  const trackOnA = activeDeck==='A' ? cur : nxt;
-  const trackOnB = activeDeck==='B' ? cur : nxt;
-  const isActiveA = activeDeck==='A';
-  const isActiveB = activeDeck==='B';
+  const root = document.getElementById('app');
+  const cur = tracks[currentIdx];
+  const nxt = tracks[(currentIdx+1)%tracks.length];
+  const trackOnA = activeDeck === 'A' ? cur : nxt;
+  const trackOnB = activeDeck === 'B' ? cur : nxt;
+  const isActiveA = activeDeck === 'A';
+  const isActiveB = activeDeck === 'B';
   const spinningA = (isActiveA && isPlaying) || isCrossfading;
   const spinningB = (isActiveB && isPlaying) || isCrossfading;
-  const gainAVal = gainA?gainA.gain.value:audioA.volume;
-  const gainBVal = gainB?gainB.gain.value:audioB.volume;
+  const gainAVal = gainA ? gainA.gain.value : audioA.volume;
+  const gainBVal = gainB ? gainB.gain.value : audioB.volume;
   const isFS = pseudoFS || !!document.fullscreenElement || !!document.webkitFullscreenElement;
-  root.innerHTML=`
+  
+  root.innerHTML = `
   <div style="min-height:100vh;display:flex;flex-direction:column;background:radial-gradient(900px 500px at 15% -10%, rgba(255,10,26,.18), transparent), radial-gradient(800px 400px at 85% -15%, rgba(0,255,136,.16), transparent), #06080a">
     <header style="display:flex;align-items:center;justify-content:space-between;padding:8px 14px;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(0,0,0,.5);backdrop-filter:blur(12px);position:sticky;top:0;z-index:20">
       <div style="display:flex;align-items:center;min-width:200px;min-height:52px">
@@ -218,7 +396,7 @@ function render(){
         <div id="logoPlaceholder" style="display:none; width:320px; height:52px; border:1.5px dashed rgba(255,255,255,.2); border-radius:10px; align-items:center; justify-content:center; background:rgba(255,255,255,.03);"><span style="font-family:Orbitron;font-size:10px;letter-spacing:.15em;color:rgba(255,255,255,.35)">TON LOGO ICI - logo.png</span></div>
       </div>
       <div style="display:flex;gap:8px;align-items:center">
-        <button id="fsBtn" class="btn" onclick="toggleFS()" style="padding:8px 16px;border-radius:20px;border:2px solid ${isFS?'#00ff88':'#ff0a1a'};background:${isFS?'rgba(0,255,136,.25)':'rgba(255,10,26,.18)'};color:${isFS?'#7affc0':'#ff8a8a'};font-size:12px;letter-spacing:.06em;box-shadow:0 0 16px ${isFS?'rgba(0,255,136,.4)':'rgba(255,10,26,.25)'}">${isFS?'✕ QUITTER (F)':'⛶ PLEIN ÉCRAN (F)'}</button>
+        <button id="fsBtn" class="btn" style="padding:8px 16px;border-radius:20px;border:2px solid ${isFS?'#00ff88':'#ff0a1a'};background:${isFS?'rgba(0,255,136,.25)':'rgba(255,10,26,.18)'};color:${isFS?'#7affc0':'#ff8a8a'};font-size:12px;letter-spacing:.06em;box-shadow:0 0 16px ${isFS?'rgba(0,255,136,.4)':'rgba(255,10,26,.25)'}">${isFS?'✕ QUITTER (F)':'⛶ PLEIN ÉCRAN (F)'}</button>
         <label style="display:flex;align-items:center;gap:6px;font-size:10px;font-family:monospace;color:#00ff88;background:rgba(0,255,136,.08);border:1px solid rgba(0,255,136,.2);padding:4px 10px;border-radius:20px">X-FADE <input id="xf" type="range" min="2" max="30" value="${crossfade}" style="width:80px;accent-color:#00ff88"> <b>${crossfade}s</b></label>
       </div>
     </header>
@@ -241,7 +419,6 @@ function render(){
         <div>${vinylHTML(trackOnA,'A', isActiveA, spinningA, gainAVal)}</div>
         <div style="display:flex;flex-direction:column;gap:12px;align-items:center;padding-top:14px">
           
-          <!-- CROSSFADER MANUEL STYLE TABLE DE MIXAGE -->
           <div style="width:100%; text-align:center;">
             <div style="display:flex; justify-content:space-between; font-family:Orbitron; font-size:8px; color:rgba(255,255,255,.4); margin-bottom:4px;">
               <span style="color:#ff0a1a">DECK A</span>
@@ -259,7 +436,6 @@ function render(){
           <div style="display:flex;gap:8px;margin-top:6px"><button id="prev" class="btn" style="width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:#fff">⏮</button><button id="play" class="btn" style="width:60px;height:60px;border-radius:50%;background:#fff;color:#000;font-size:22px;font-weight:900"> ${isPlaying?'II':'▶'} </button><button id="next" class="btn" style="width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:#fff">⏭</button></div>
           <div style="font-family:Orbitron;font-size:9px;color:rgba(255,255,255,.4);text-align:center">DECK ${activeDeck} ACTIF • AUTO-DELETE ON</div>
           
-          <!-- LOGO ROND FULL - REMPLIT TOUT LE CERCLE -->
           <div style="margin-top:10px; display:flex; flex-direction:column; align-items:center; gap:8px;">
             <div class="center-logo-wrap" id="centerLogoWrap">
               <img id="centerLogo" src="logo2.png" alt="GT GASNIER TECH" onerror="this.style.display='none'; document.getElementById('centerPlaceholder').style.display='flex';">
@@ -297,25 +473,47 @@ function render(){
     </main>
   </div>`;
 
-  document.getElementById('fsBtn').onclick=toggleFS;
-  document.getElementById('xf').oninput=e=>{ crossfade=parseInt(e.target.value); render(); };
-  document.getElementById('play').onclick=async()=>{ initAudio(); if(ctx.state==='suspended') await ctx.resume(); if(!tracks.length) return; if(isPlaying){ getActiveAudio().pause(); isPlaying=false; cancelAnimationFrame(raf); } else { if(!getActiveAudio().src) await loadToDeck(currentIdx, activeDeck); await getActiveAudio().play(); isPlaying=true; loop(); } render(); };
-  document.getElementById('prev').onclick=prevManual; document.getElementById('next').onclick=nextManual;
+  document.getElementById('fsBtn').onclick = toggleFS;
+  document.getElementById('xf').oninput = e => { crossfade = parseInt(e.target.value); render(); };
+  
+  document.getElementById('play').onclick = async () => { 
+    await initAudio(); 
+    if(!tracks.length) return; 
+    
+    if(isPlaying){ 
+      getActiveAudio().pause(); 
+      isPlaying = false; 
+      cancelAnimationFrame(raf); 
+    } else { 
+      if(!getActiveAudio().src) await loadToDeck(currentIdx, activeDeck); 
+      try {
+        await getActiveAudio().play(); 
+        isPlaying = true; 
+        loop(); 
+      } catch(err){
+        console.error("Erreur de lecture audio:", err);
+      }
+    } 
+    render(); 
+  };
+  
+  document.getElementById('prev').onclick = prevManual; 
+  document.getElementById('next').onclick = nextManual;
   
   const xfSlider = document.getElementById('xfade-slider');
   if(xfSlider){
     xfSlider.oninput = e => updateManualCrossfade(parseFloat(e.target.value));
   }
 
-  document.getElementById('file').onchange=e=> handleFiles(e.target.files);
-  document.getElementById('folder').onchange=e=> handleFiles(e.target.files);
-  document.getElementById('btnShuffle').onclick=shufflePlaylist;
-  document.getElementById('btnClear').onclick=clearPlaylist;
+  document.getElementById('file').onchange = e => handleFiles(e.target.files);
+  document.getElementById('folder').onchange = e => handleFiles(e.target.files);
+  document.getElementById('btnShuffle').onclick = shufflePlaylist;
+  document.getElementById('btnClear').onclick = clearPlaylist;
 
-  const drop=document.getElementById('drop'); 
-  drop.ondragover=e=>{ e.preventDefault(); drop.style.borderColor='#00ff88'; }; 
-  drop.ondragleave=()=> drop.style.borderColor='rgba(255,255,255,.14)'; 
-  drop.ondrop=e=>{ 
+  const drop = document.getElementById('drop'); 
+  drop.ondragover = e => { e.preventDefault(); drop.style.borderColor='#00ff88'; }; 
+  drop.ondragleave = () => drop.style.borderColor='rgba(255,255,255,.14)'; 
+  drop.ondrop = e => { 
     e.preventDefault(); 
     drop.style.borderColor='rgba(255,255,255,.14)'; 
     if(e.dataTransfer.items){
@@ -335,32 +533,83 @@ function render(){
     }
   };
 
-  document.querySelectorAll('.row').forEach(el=>{
-    el.ondragstart=ev=>{ ev.dataTransfer.setData('text/plain', el.dataset.i); ev.dataTransfer.setData('trackIdx', el.dataset.i); };
-    el.ondragover=ev=> ev.preventDefault();
-    el.ondrop=ev=>{ ev.preventDefault(); const from=parseInt(ev.dataTransfer.getData('text/plain')); const to=parseInt(el.dataset.i); if(!isNaN(from)&&from!==to){ const [m]=tracks.splice(from,1); tracks.splice(to,0,m); if(currentIdx===from) currentIdx=to; else if(from<currentIdx && to>=currentIdx) currentIdx--; else if(from>currentIdx && to<=currentIdx) currentIdx++; render(); } };
-    el.onclick=()=> startPlayback(parseInt(el.dataset.i));
+  document.querySelectorAll('.row').forEach(el => {
+    el.ondragstart = ev => { ev.dataTransfer.setData('text/plain', el.dataset.i); ev.dataTransfer.setData('trackIdx', el.dataset.i); };
+    el.ondragover = ev => ev.preventDefault();
+    el.ondrop = ev => { 
+      ev.preventDefault(); 
+      const from = parseInt(ev.dataTransfer.getData('text/plain')); 
+      const to = parseInt(el.dataset.i); 
+      if(!isNaN(from) && from !== to){ 
+        const [m] = tracks.splice(from,1); 
+        tracks.splice(to,0,m); 
+        if(currentIdx === from) currentIdx = to; 
+        else if(from < currentIdx && to >= currentIdx) currentIdx--; 
+        else if(from > currentIdx && to <= currentIdx) currentIdx++; 
+        render(); 
+      } 
+    };
+    el.onclick = () => startPlayback(parseInt(el.dataset.i));
   });
 
-  document.querySelectorAll('.del').forEach(b=> b.onclick=ev=>{ ev.stopPropagation(); const idx=tracks.findIndex(t=>t.id===b.dataset.id); if(idx!==-1){ URL.revokeObjectURL(tracks[idx].url); tracks.splice(idx,1); if(idx===currentIdx){ isPlaying=false; getActiveAudio().pause(); } if(currentIdx>=tracks.length) currentIdx=Math.max(0,tracks.length-1); render(); } });
+  document.querySelectorAll('.del').forEach(b => b.onclick = ev => { 
+    ev.stopPropagation(); 
+    const idx = tracks.findIndex(t => t.id === b.dataset.id); 
+    if(idx !== -1){ 
+      URL.revokeObjectURL(tracks[idx].url); 
+      tracks.splice(idx,1); 
+      if(idx === currentIdx){ 
+        isPlaying = false; 
+        getActiveAudio().pause(); 
+      } 
+      if(currentIdx >= tracks.length) currentIdx = Math.max(0, tracks.length - 1); 
+      render(); 
+    } 
+  });
 
-  ['deckA','deckB'].forEach(id=>{
-    const deck=document.getElementById(id); if(!deck) return;
-    deck.ondragover=e=>{ e.preventDefault(); document.getElementById('wrap'+deck.dataset.deck)?.classList.add('drag-over'); };
-    deck.ondragleave=()=> document.getElementById('wrap'+deck.dataset.deck)?.classList.remove('drag-over');
-    deck.ondrop=e=>{
-      e.preventDefault(); document.getElementById('wrap'+deck.dataset.deck)?.classList.remove('drag-over');
-      const ti=parseInt(e.dataTransfer.getData('trackIdx')||e.dataTransfer.getData('text/plain'));
+  ['deckA','deckB'].forEach(id => {
+    const deck = document.getElementById(id); if(!deck) return;
+    deck.ondragover = e => { e.preventDefault(); document.getElementById('wrap'+deck.dataset.deck)?.classList.add('drag-over'); };
+    deck.ondragleave = () => document.getElementById('wrap'+deck.dataset.deck)?.classList.remove('drag-over');
+    deck.ondrop = e => {
+      e.preventDefault(); 
+      document.getElementById('wrap'+deck.dataset.deck)?.classList.remove('drag-over');
+      const ti = parseInt(e.dataTransfer.getData('trackIdx') || e.dataTransfer.getData('text/plain'));
       if(isNaN(ti)) return;
-      const targetDeck=deck.dataset.deck;
-      if(targetDeck===activeDeck){ startPlayback(ti); }
-      else { const [moved]=tracks.splice(ti,1); const ins=currentIdx+1; const finalPos=ins>tracks.length?tracks.length:ins; tracks.splice(finalPos,0,moved); loadToDeck(finalPos, targetDeck); render(); }
+      const targetDeck = deck.dataset.deck;
+      if(targetDeck === activeDeck){ 
+        startPlayback(ti); 
+      } else { 
+        const [moved] = tracks.splice(ti, 1); 
+        const ins = currentIdx + 1; 
+        const finalPos = ins > tracks.length ? tracks.length : ins; 
+        tracks.splice(finalPos, 0, moved); 
+        loadToDeck(finalPos, targetDeck); 
+        render(); 
+      }
     };
   });
 
-  const range=document.getElementById('prog-range'), wrap=document.getElementById('prog-wrap');
-  if(range){ range.oninput=e=>{ progressDragging=true; const a=getActiveAudio(); const v=parseFloat(e.target.value); if(!isNaN(v)) a.currentTime=v; updProg(); }; range.onchange=()=> progressDragging=false; }
-  if(wrap){ wrap.onclick=e=>{ if(e.target.id==='prog-range') return; const rect=wrap.getBoundingClientRect(); const pct=(e.clientX-rect.left)/rect.width; const a=getActiveAudio(); if(a.duration) a.currentTime=pct*a.duration; }; }
+  const range = document.getElementById('prog-range'), wrap = document.getElementById('prog-wrap');
+  if(range){ 
+    range.oninput = e => { 
+      progressDragging = true; 
+      const a = getActiveAudio(); 
+      const v = parseFloat(e.target.value); 
+      if(!isNaN(v)) a.currentTime = v; 
+      updProg(); 
+    }; 
+    range.onchange = () => progressDragging = false; 
+  }
+  if(wrap){ 
+    wrap.onclick = e => { 
+      if(e.target.id === 'prog-range') return; 
+      const rect = wrap.getBoundingClientRect(); 
+      const pct = (e.clientX - rect.left) / rect.width; 
+      const a = getActiveAudio(); 
+      if(a.duration) a.currentTime = pct * a.duration; 
+    }; 
+  }
 }
 
 function parseDirectory(dirEntry){
@@ -377,8 +626,11 @@ function parseDirectory(dirEntry){
 }
 
 render();
-document.addEventListener('keydown', e=>{ if(e.key.toLowerCase()==='f'){ toggleFS(); } if(e.key==='Escape' && pseudoFS){ toggleFS(); } });
-document.addEventListener('fullscreenchange', ()=>{ render(); });
+document.addEventListener('keydown', e => { 
+  if(e.key.toLowerCase() === 'f'){ toggleFS(); } 
+  if(e.key === 'Escape' && pseudoFS){ toggleFS(); } 
+});
+document.addEventListener('fullscreenchange', () => { render(); });
 </script>
 </body>
 </html>
