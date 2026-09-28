@@ -63,8 +63,8 @@ function initAudio(){
   ctx=new (window.AudioContext||window.webkitAudioContext)();
   master=ctx.createGain(); gainA=ctx.createGain(); gainB=ctx.createGain();
   master.gain.value=0.95; gainA.connect(master); gainB.connect(master); master.connect(ctx.destination);
-  try{ srcA=ctx.createMediaElementSource(audioA); srcA.connect(gainA);}catch{}
-  try{ srcB=ctx.createMediaElementSource(audioB); srcB.connect(gainB);}catch{}
+  try{ srcA=ctx.createMediaElementSource(audioA);}catch{}
+  try{ srcB=ctx.createMediaElementSource(audioB);}catch{}
   gainA.gain.value=1; gainB.gain.value=0; audioA.volume=1; audioB.volume=0;
 }
 
@@ -161,6 +161,21 @@ function handleFiles(list){
     tracks.push(tr); 
   }); 
   render(); 
+}
+
+function shufflePlaylist(){
+  if(tracks.length <= 1) return;
+  const currentTrack = tracks[currentIdx];
+  const otherTracks = tracks.filter((_, i) => i !== currentIdx);
+  
+  for(let i = otherTracks.length - 1; i > 0; i--){
+    const j = Math.floor(Math.random() * (i + 1));
+    [otherTracks[i], otherTracks[j]] = [otherTracks[j], otherTracks[i]];
+  }
+  
+  tracks = [currentTrack, ...otherTracks];
+  currentIdx = 0;
+  render();
 }
 
 function clearPlaylist(){
@@ -271,7 +286,10 @@ function render(){
         <div style="background:rgba(10,14,18,.75);border:1px solid rgba(255,255,255,.08);border-radius:14px;overflow:hidden;max-height:260px;display:flex;flex-direction:column">
           <div style="padding:8px 12px;border-bottom:1px solid rgba(255,255,255,.07);display:flex;justify-content:space-between;align-items:center">
             <span style="font-family:monospace;font-size:10px;color:rgba(255,255,255,.45)">Playlist : les titres joués disparaissent</span>
-            <button id="btnClear" class="btn" style="padding:3px 10px;border-radius:12px;background:rgba(255,10,26,.2);border:1px solid rgba(255,10,26,.4);color:#ff8a8a;font-size:10px">🗑 VIDER</button>
+            <div style="display:flex;gap:6px">
+              <button id="btnShuffle" class="btn" style="padding:3px 10px;border-radius:12px;background:rgba(0,255,136,.2);border:1px solid rgba(0,255,136,.4);color:#7affc0;font-size:10px">🔀 MÉLANGER</button>
+              <button id="btnClear" class="btn" style="padding:3px 10px;border-radius:12px;background:rgba(255,10,26,.2);border:1px solid rgba(255,10,26,.4);color:#ff8a8a;font-size:10px">🗑 VIDER</button>
+            </div>
           </div>
           <div style="overflow:auto;flex:1">${tracks.length===0?`<div style="padding:20px;text-align:center;font-family:monospace;font-size:11px;color:rgba(255,255,255,.35)">La liste est vide - tous les titres ont été joués !</div>`: tracks.map((t,i)=>`<div class="row" data-i="${i}" draggable="true" style="display:flex;gap:10px;align-items:center;padding:9px 12px;border-bottom:1px solid rgba(255,255,255,.05);cursor:grab;background:${i===currentIdx?'rgba(255,10,26,.08)':'transparent'}"><div style="width:20px;height:20px;border-radius:50%;border:1px solid rgba(255,255,255,.12);display:grid;place-items:center;font-size:10px">${i+1}</div><div style="flex:1;font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t.title}</div><button class="del" data-id="${t.id}" style="width:22px;height:22px;border-radius:50%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:#fff">✕</button></div>`).join('')}</div>
         </div>
@@ -291,6 +309,7 @@ function render(){
 
   document.getElementById('file').onchange=e=> handleFiles(e.target.files);
   document.getElementById('folder').onchange=e=> handleFiles(e.target.files);
+  document.getElementById('btnShuffle').onclick=shufflePlaylist;
   document.getElementById('btnClear').onclick=clearPlaylist;
 
   const drop=document.getElementById('drop'); 
