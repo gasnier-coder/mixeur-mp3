@@ -48,7 +48,7 @@ html.is-fullscreen #app{position:fixed !important;inset:0 !important;width:100vw
 <body>
 <div id="app"></div>
 <script>
-let tracks=[], currentIdx=0, isPlaying=false, isCrossfading=false, crossfade=14, shuffle=false, pseudoFS=false;
+let tracks=[], currentIdx=0, isPlaying=false, isCrossfading=false, crossfade=18, shuffle=false, pseudoFS=false;
 let audioA=new Audio(), audioB=new Audio(), activeDeck='A', currentTime=0, duration=0;
 let ctx=null, gainA=null, gainB=null, master=null, srcA=null, srcB=null, raf=null, progressDragging=false;
 let manualXFadeVal=0; // 0 = Deck A, 100 = Deck B
@@ -389,8 +389,8 @@ function render(){
   const isFS = pseudoFS || !!document.fullscreenElement || !!document.webkitFullscreenElement;
   
   root.innerHTML = `
-  <div style="min-height:100vh;display:flex;flex-direction:column;background:radial-gradient(900px 500px at 15% -10%, rgba(255,10,26,.18), transparent), radial-gradient(800px 400px at 85% -15%, rgba(0,255,136,.16), transparent), #06080a">
-    <header style="display:flex;align-items:center;justify-content:space-between;padding:8px 14px;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(0,0,0,.5);backdrop-filter:blur(12px);position:sticky;top:0;z-index:20">
+  <div style="min-height:100vh;display:flex;flex-direction:column;background:radial-gradient(900px 500px at 15% -10%, rgba(255,10,26,.18), transparent), radial-gradient(800px 400px at 85% -15%, rgba(0,255,136,.16), transparent), #636069">
+    <header style="display:flex;align-items:center;justify-content:space-between;padding:8px 14px;border-bottom:1px solid rgba(255,255,255,.08);background:#636069;backdrop-filter:blur(12px);position:sticky;top:0;z-index:20">
       <div style="display:flex;align-items:center;min-width:200px;min-height:52px">
         <img id="customLogo" src="logo.png" alt="LOGO" style="max-height:78px; max-width:480px; width:auto; height:auto; object-fit:contain; display:block;" onerror="this.style.display='none'; document.getElementById('logoPlaceholder').style.display='flex';">
         <div id="logoPlaceholder" style="display:none; width:320px; height:52px; border:1.5px dashed rgba(255,255,255,.2); border-radius:10px; align-items:center; justify-content:center; background:rgba(255,255,255,.03);"><span style="font-family:Orbitron;font-size:10px;letter-spacing:.15em;color:rgba(255,255,255,.35)">TON LOGO ICI - logo.png</span></div>
