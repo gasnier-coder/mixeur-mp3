@@ -51,10 +51,75 @@ html.is-fullscreen #app{position:fixed !important;inset:0 !important;width:100vw
 let tracks=[], currentIdx=0, isPlaying=false, isCrossfading=false, crossfade=18, shuffle=false, pseudoFS=false;
 let audioA=new Audio(), audioB=new Audio(), activeDeck='A', currentTime=0, duration=0;
 let ctx=null, gainA=null, gainB=null, master=null, srcA=null, srcB=null, raf=null, progressDragging=false;
-let manualXFadeVal=0; // 0 = Deck A, 100 = Deck B
+let manualXFadeVal=0;
 
 audioA.preload='auto'; audioB.preload='auto';
 audioA.crossOrigin='anonymous'; audioB.crossOrigin='anonymous';
+
+// --- GESTION STOCKAGE LOCAL (IndexedDB) ---
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('GT_MixerDB', 1);
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains('tracks')) {
+        db.createObjectStore('tracks', { keyPath: 'id' });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function savePlaylistToDB() {
+  try {
+    const db = await openDB();
+    const tx = db.transaction('tracks', 'readwrite');
+    const store = tx.objectStore('tracks');
+    await store.clear();
+    for (let i = 0; i < tracks.length; i++) {
+      const t = tracks[i];
+      store.put({
+        id: t.id,
+        title: t.title,
+        initial: t.initial,
+        duration: t.duration,
+        file: t.file
+      });
+    }
+  } catch (e) {
+    console.error("Erreur sauvegarde DB:", e);
+  }
+}
+
+async function loadPlaylistFromDB() {
+  try {
+    const db = await openDB();
+    const tx = db.transaction('tracks', 'readonly');
+    const store = tx.objectStore('tracks');
+    const req = store.getAll();
+    req.onsuccess = () => {
+      const saved = req.result || [];
+      if (saved.length > 0) {
+        tracks = saved.map(item => {
+          const blob = item.file;
+          const url = URL.createObjectURL(blob);
+          return {
+            id: item.id,
+            file: blob,
+            url: url,
+            title: item.title,
+            initial: item.initial,
+            duration: item.duration
+          };
+        });
+        render();
+      }
+    };
+  } catch (e) {
+    console.error("Erreur chargement DB:", e);
+  }
+}
 
 function fmt(s){ if(!s||isNaN(s)) return '00:00'; const m=Math.floor(s/60), sec=Math.floor(s%60); return `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`}
 function fmtRem(s){ if(!s||isNaN(s)) return '  -00:00  '; const m=Math.floor(s/60), sec=Math.floor(s%60); return `  -${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}  ` }
@@ -138,6 +203,7 @@ function nextManual(){
   if(oldTrack){
     try{ URL.revokeObjectURL(oldTrack.url); }catch{}
     tracks.splice(oldIdx, 1);
+    savePlaylistToDB();
     if(tracks.length===0){ 
       isPlaying = false; 
       getActiveAudio().pause(); 
@@ -159,7 +225,7 @@ function prevManual(){
 
 function updateManualCrossfade(val){
   manualXFadeVal = val;
-  const p = val / 100; // 0 (Deck A) à 1 (Deck B)
+  const p = val / 100;
   const gA = Math.cos(p * Math.PI / 2);
   const gB = Math.cos((1 - p) * Math.PI / 2);
   
@@ -232,6 +298,7 @@ async function doCrossfade(){
       if(playedTrack){
         try{ URL.revokeObjectURL(playedTrack.url); }catch{}
         tracks.splice(oldIdx, 1);
+        savePlaylistToDB();
         if(oldIdx < newIdx) newIdx--;
       }
       
@@ -305,6 +372,7 @@ function updProg(){
 
 function handleFiles(list){ 
   initAudio();
+  let count = 0;
   [...list].forEach(f => { 
     if(!f.type.startsWith('audio/') && !f.name.match(/\.(mp3|wav|ogg|m4a|flac)$/i)) return;
     const url = URL.createObjectURL(f); 
@@ -320,7 +388,11 @@ function handleFiles(list){
       render();
     }; 
     tracks.push(tr); 
+    count++;
   }); 
+  if(count > 0){
+    savePlaylistToDB();
+  }
   render(); 
 }
 
@@ -336,16 +408,40 @@ function shufflePlaylist(){
   
   tracks = [currentTrack, ...otherTracks];
   currentIdx = 0;
+  savePlaylistToDB();
   render();
 }
 
 function clearPlaylist(){
-  tracks.forEach(t => { try{ URL.revokeObjectURL(t.url); }catch{} });
-  tracks = [];
-  currentIdx = 0;
-  isPlaying = false;
-  audioA.pause(); audioB.pause();
-  audioA.currentTime = 0; audioB.currentTime = 0;
+  if(tracks.length === 0) return;
+
+  if(!isPlaying && tracks.length > 0){
+    // Si rien ne tourne, on réinitialise tout proprement
+    tracks.forEach(t => { try{ URL.revokeObjectURL(t.url); }catch{} });
+    tracks = [];
+    currentIdx = 0;
+    audioA.pause(); audioB.pause();
+    audioA.currentTime = 0; audioB.currentTime = 0;
+  } else {
+    // Si la lecture est en cours : conserver le titre en cours + le suivant prévu
+    const curTrack = tracks[currentIdx];
+    const nextTrack = tracks[currentIdx + 1] || null;
+    
+    const preserved = [curTrack];
+    if(nextTrack) preserved.push(nextTrack);
+
+    // Révoquer uniquement les URL des morceaux jetés
+    tracks.forEach(t => {
+      if(!preserved.includes(t)){
+        try{ URL.revokeObjectURL(t.url); }catch{}
+      }
+    });
+
+    tracks = preserved;
+    currentIdx = 0;
+  }
+  
+  savePlaylistToDB();
   render();
 }
 
@@ -546,6 +642,7 @@ function render(){
         if(currentIdx === from) currentIdx = to; 
         else if(from < currentIdx && to >= currentIdx) currentIdx--; 
         else if(from > currentIdx && to <= currentIdx) currentIdx++; 
+        savePlaylistToDB();
         render(); 
       } 
     };
@@ -558,6 +655,7 @@ function render(){
     if(idx !== -1){ 
       URL.revokeObjectURL(tracks[idx].url); 
       tracks.splice(idx,1); 
+      savePlaylistToDB();
       if(idx === currentIdx){ 
         isPlaying = false; 
         getActiveAudio().pause(); 
@@ -584,6 +682,7 @@ function render(){
         const ins = currentIdx + 1; 
         const finalPos = ins > tracks.length ? tracks.length : ins; 
         tracks.splice(finalPos, 0, moved); 
+        savePlaylistToDB();
         loadToDeck(finalPos, targetDeck); 
         render(); 
       }
@@ -625,7 +724,10 @@ function parseDirectory(dirEntry){
   });
 }
 
+// Initialisation et chargement des données au démarrage
 render();
+loadPlaylistFromDB();
+
 document.addEventListener('keydown', e => { 
   if(e.key.toLowerCase() === 'f'){ toggleFS(); } 
   if(e.key === 'Escape' && pseudoFS){ toggleFS(); } 
