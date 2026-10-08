@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="fr" class="is-fullscreen">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -8,7 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Rajdhani:wght@600;700;800&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box}
-html,body{margin:0;min-height:100%;background:#06080a;color:#fff;font-family:'Rajdhani',sans-serif}
+html,body{margin:0;min-height:100%;background:#06080a;color:#fff;font-family:'Rajdhani',sans-serif;overflow:hidden}
 ::-webkit-scrollbar{width:7px;height:7px}::-webkit-scrollbar-thumb{background:#ffffff1e;border-radius:10px}
 @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
 .deck-wrap{position:relative;width:100%;max-width:280px;margin:0 auto;transition:.2s}
@@ -28,9 +28,8 @@ html,body{margin:0;min-height:100%;background:#06080a;color:#fff;font-family:'Ra
 .progress-fill{height:100%;background:linear-gradient(90deg,#ff0a1a,#ff6a3a 40%,#00ff88 100%)}
 .btn{border:none;cursor:pointer;font-family:Rajdhani;font-weight:800;transition:.2s}
 .btn:active{transform:scale(.96)}
-html.is-fullscreen{overflow:hidden}
-html.is-fullscreen body{overflow:hidden}
-html.is-fullscreen #app{position:fixed !important;inset:0 !important;width:100vw !important;height:100vh !important;height:100dvh !important;z-index:2147483647 !important;background:#06080a !important;overflow:auto !important}
+
+#app{position:fixed !important;inset:0 !important;width:100vw !important;height:100vh !important;height:100dvh !important;z-index:2147483647 !important;background:#06080a !important;overflow:auto !important}
 #rem-time{font-size:28px; font-variant-numeric:tabular-nums; min-width:115px; text-align:center; display:inline-block; padding:2px 12px !important; letter-spacing:0.03em;}
 
 .center-logo-wrap{width:176px;height:176px;border-radius:50%;border:3px solid #ff0a1a;background:#000;overflow:hidden;display:grid;place-items:center;box-shadow:0 0 22px rgba(255,10,26,.45), inset 0 0 20px rgba(0,0,0,.8);position:relative;transition:.3s}
@@ -48,13 +47,32 @@ html.is-fullscreen #app{position:fixed !important;inset:0 !important;width:100vw
 <body>
 <div id="app"></div>
 <script>
-let tracks=[], currentIdx=0, isPlaying=false, isCrossfading=false, crossfade=18, shuffle=false, pseudoFS=false;
+let tracks=[], currentIdx=0, isPlaying=false, isCrossfading=false, crossfade=18, shuffle=false;
 let audioA=new Audio(), audioB=new Audio(), activeDeck='A', currentTime=0, duration=0;
 let ctx=null, gainA=null, gainB=null, master=null, srcA=null, srcB=null, raf=null, progressDragging=false;
 let manualXFadeVal=0;
 
 audioA.preload='auto'; audioB.preload='auto';
 audioA.crossOrigin='anonymous'; audioB.crossOrigin='anonymous';
+
+// --- GESTION DU PLEIN ÉCRAN ---
+function toggleFS() {
+  if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+    const el = document.documentElement;
+    if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
+    else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+  } else {
+    if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+    else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+  }
+}
+
+function requestNativeFS() {
+  if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+    toggleFS();
+  }
+}
+window.addEventListener('click', requestNativeFS, { once: true });
 
 // --- GESTION STOCKAGE LOCAL (IndexedDB) ---
 function openDB() {
@@ -416,21 +434,18 @@ function clearPlaylist(){
   if(tracks.length === 0) return;
 
   if(!isPlaying && tracks.length > 0){
-    // Si rien ne tourne, on réinitialise tout proprement
     tracks.forEach(t => { try{ URL.revokeObjectURL(t.url); }catch{} });
     tracks = [];
     currentIdx = 0;
     audioA.pause(); audioB.pause();
     audioA.currentTime = 0; audioB.currentTime = 0;
   } else {
-    // Si la lecture est en cours : conserver le titre en cours + le suivant prévu
     const curTrack = tracks[currentIdx];
     const nextTrack = tracks[currentIdx + 1] || null;
     
     const preserved = [curTrack];
     if(nextTrack) preserved.push(nextTrack);
 
-    // Révoquer uniquement les URL des morceaux jetés
     tracks.forEach(t => {
       if(!preserved.includes(t)){
         try{ URL.revokeObjectURL(t.url); }catch{}
@@ -451,25 +466,6 @@ function vinylHTML(track, deck, isActiveDeck, isSpinning, gain){
   return `<div class="deck-wrap" id="wrap${deck}"><div class="deck-glow" style="background:radial-gradient(circle, ${hue}33 0%, transparent 70%); opacity:${isActiveDeck?0.65:0.18}"></div><div id="deck${deck}" class="deck ${isSpinning?'playing':''}" data-deck="${deck}" style="border-color:${isActiveDeck?hue:'rgba(255,255,255,.14)'}"><div class="deck-disc"><div class="deck-disc-inner"></div><div class="shine"></div></div><div class="label-center" style="background:radial-gradient(circle at 35% 35%, #1a1a1a 0%, #0a0a0a 60%, #000 100%); border:1.5px solid ${hue}; box-shadow:0 0 0 3px #000, 0 0 14px ${hue}66"><div style="display:flex;flex-direction:column;align-items:center"><span style="font-family:Orbitron;font-weight:900;font-size:24px;color:${hue};text-shadow:0 0 10px ${hue}">${label}</span><span style="font-size:6px;letter-spacing:.25em;color:rgba(255,255,255,.4);font-family:monospace">${deck} • 33⅓</span></div></div><svg class="dotted" viewBox="0 0 100 100"><circle cx="50" cy="50" r="49" fill="none" stroke="${hue}" stroke-width="${isActiveDeck && isSpinning?0.7:0.28}" stroke-dasharray="${isActiveDeck && isSpinning?'2 4':'1 8'}" opacity="${isActiveDeck?0.62:0.18}" style="${isActiveDeck && isSpinning?'animation:spin 6s linear infinite; transform-origin:50% 50%':''}"></circle></svg>${!isActiveDeck?`<div style="position:absolute;inset:0;border-radius:50%;background:rgba(0,0,0,.38);display:grid;place-items:center;z-index:4"><div style="font-family:Orbitron;font-size:9px;color:rgba(255,255,255,.75);background:rgba(0,0,0,.65);padding:3px 8px;border-radius:20px;border:1px solid rgba(255,255,255,.15)">DROP = ATTENTE</div></div>`:''}</div><div class="gain-bar"><div class="gain-track"><div class="gain-fill" style="width:${(gain||0)*100}%; background:linear-gradient(90deg, ${hue}, #fff); box-shadow:0 0 8px ${hue}"></div></div><span style="font-size:7px;font-family:monospace;color:rgba(255,255,255,.35)">${deck}</span></div></div><div style="margin-top:18px;text-align:center;min-height:46px"><div style="font-family:Rajdhani;font-weight:800;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px;margin:0 auto;color:${isActiveDeck?'#fff':'rgba(255,255,255,.65)'}" title="${track?track.title:''}">${track?track.title:(deck==='A'?'Aucune piste':'En attente')}</div><div style="font-family:monospace;font-size:11px;margin-top:3px;color:${isActiveDeck?(deck==='A'?'#ff6a6a':'#7affc0'):'rgba(255,255,255,.45)'}">${isActiveDeck? (isCrossfading?(deck===activeDeck?'FADING OUT':'FADING IN'):(isSpinning?'▶ LECTURE':'■ STOP')) : '▶ PROCHAIN T'}</div></div>`;
 }
 
-function toggleFS(){ 
-  pseudoFS = !pseudoFS; 
-  document.documentElement.classList.toggle('is-fullscreen', pseudoFS); 
-  try{ 
-    if(pseudoFS){ 
-      const el = document.documentElement; 
-      if(el.requestFullscreen) el.requestFullscreen().catch(()=>{}); 
-      else if(el.webkitRequestFullscreen) el.webkitRequestFullscreen(); 
-    } else { 
-      if(document.fullscreenElement || document.webkitFullscreenElement){ 
-        if(document.exitFullscreen) document.exitFullscreen().catch(()=>{}); 
-        else if(document.webkitExitFullscreen) document.webkitExitFullscreen(); 
-      } 
-    } 
-  }catch(e){} 
-  render(); 
-}
-window.toggleFS = toggleFS;
-
 function render(){
   const root = document.getElementById('app');
   const cur = tracks[currentIdx];
@@ -482,17 +478,18 @@ function render(){
   const spinningB = (isActiveB && isPlaying) || isCrossfading;
   const gainAVal = gainA ? gainA.gain.value : audioA.volume;
   const gainBVal = gainB ? gainB.gain.value : audioB.volume;
-  const isFS = pseudoFS || !!document.fullscreenElement || !!document.webkitFullscreenElement;
   
   root.innerHTML = `
   <div style="min-height:100vh;display:flex;flex-direction:column;background:radial-gradient(900px 500px at 15% -10%, rgba(255,10,26,.18), transparent), radial-gradient(800px 400px at 85% -15%, rgba(0,255,136,.16), transparent), #636069">
     <header style="display:flex;align-items:center;justify-content:space-between;padding:8px 14px;border-bottom:1px solid rgba(255,255,255,.08);background:#636069;backdrop-filter:blur(12px);position:sticky;top:0;z-index:20">
-      <div style="display:flex;align-items:center;min-width:200px;min-height:52px; margin-left: 300px;">
-        <img id="customLogo" src="logo.gif" alt="LOGO" style="max-height:78px; max-width:480px; width:auto; height:auto; object-fit:contain; display:block;" onerror="this.style.display='none'; document.getElementById('logoPlaceholder').style.display='flex';">
-        <div id="logoPlaceholder" style="display:none; width:320px; height:52px; border:1.5px dashed rgba(255,255,255,.2); border-radius:10px; align-items:center; justify-content:center; background:rgba(255,255,255,.03);"><span style="font-family:Orbitron;font-size:10px;letter-spacing:.15em;color:rgba(255,255,255,.35)">TON LOGO ICI - logo.png</span></div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <button id="btnFS" class="btn" style="width:28px;height:28px;border-radius:6px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);color:#fff;font-size:14px;display:grid;place-items:center;padding:0" title="Plein écran">⛶</button>
+        <div style="display:flex;align-items:center;min-width:200px;min-height:52px; margin-left: 260px;">
+          <img id="customLogo" src="logo.gif" alt="LOGO" style="max-height:78px; max-width:480px; width:auto; height:auto; object-fit:contain; display:block;" onerror="this.style.display='none'; document.getElementById('logoPlaceholder').style.display='flex';">
+          <div id="logoPlaceholder" style="display:none; width:320px; height:52px; border:1.5px dashed rgba(255,255,255,.2); border-radius:10px; align-items:center; justify-content:center; background:rgba(255,255,255,.03);"><span style="font-family:Orbitron;font-size:10px;letter-spacing:.15em;color:rgba(255,255,255,.35)">TON LOGO ICI - logo.png</span></div>
+        </div>
       </div>
       <div style="display:flex;gap:8px;align-items:center">
-        <button id="fsBtn" class="btn" style="padding:8px 16px;border-radius:20px;border:2px solid ${isFS?'#00ff88':'#ff0a1a'};background:${isFS?'rgba(0,255,136,.25)':'rgba(255,10,26,.18)'};color:${isFS?'#7affc0':'#ff8a8a'};font-size:12px;letter-spacing:.06em;box-shadow:0 0 16px ${isFS?'rgba(0,255,136,.4)':'rgba(255,10,26,.25)'}">${isFS?'✕ QUITTER (F)':'⛶ PLEIN ÉCRAN (F)'}</button>
         <label style="display:flex;align-items:center;gap:6px;font-size:10px;font-family:monospace;color:#00ff88;background:rgba(0,255,136,.08);border:1px solid rgba(0,255,136,.2);padding:4px 10px;border-radius:20px">X-FADE <input id="xf" type="range" min="2" max="30" value="${crossfade}" style="width:80px;accent-color:#00ff88"> <b>${crossfade}s</b></label>
       </div>
     </header>
@@ -569,7 +566,7 @@ function render(){
     </main>
   </div>`;
 
-  document.getElementById('fsBtn').onclick = toggleFS;
+  document.getElementById('btnFS').onclick = toggleFS;
   document.getElementById('xf').oninput = e => { crossfade = parseInt(e.target.value); render(); };
   
   document.getElementById('play').onclick = async () => { 
@@ -727,12 +724,6 @@ function parseDirectory(dirEntry){
 // Initialisation et chargement des données au démarrage
 render();
 loadPlaylistFromDB();
-
-document.addEventListener('keydown', e => { 
-  if(e.key.toLowerCase() === 'f'){ toggleFS(); } 
-  if(e.key === 'Escape' && pseudoFS){ toggleFS(); } 
-});
-document.addEventListener('fullscreenchange', () => { render(); });
 </script>
 </body>
 </html>
